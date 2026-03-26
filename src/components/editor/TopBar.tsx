@@ -1,4 +1,5 @@
 import { useRef } from 'react'
+import type { ThemeMode } from '../../lib/localAccounts'
 import { GlobalRichTextToolbar } from './GlobalRichTextToolbar'
 
 interface TopBarProps {
@@ -6,6 +7,8 @@ interface TopBarProps {
   previewMode: boolean
   canUndo: boolean
   canRedo: boolean
+  currentUsername: string | null
+  theme: ThemeMode
   onTitleChange: (title: string) => void
   onUndo: () => void
   onRedo: () => void
@@ -14,6 +17,9 @@ interface TopBarProps {
   onTogglePreview: () => void
   onCopyHtml: () => void
   onDownloadHtml: () => void
+  onOpenWorkspaces: () => void
+  onToggleTheme: () => void
+  onLogout: () => void
   onResetDemo: () => void
 }
 
@@ -22,6 +28,8 @@ export const TopBar = ({
   previewMode,
   canUndo,
   canRedo,
+  currentUsername,
+  theme,
   onTitleChange,
   onUndo,
   onRedo,
@@ -30,6 +38,9 @@ export const TopBar = ({
   onTogglePreview,
   onCopyHtml,
   onDownloadHtml,
+  onOpenWorkspaces,
+  onToggleTheme,
+  onLogout,
   onResetDemo,
 }: TopBarProps) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -57,15 +68,17 @@ export const TopBar = ({
           <button type="button" onClick={onSaveDraft}>
             Сохранить
           </button>
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="ghost"
-          >
+          <button type="button" onClick={onOpenWorkspaces} className="ghost">
+            Мои работы
+          </button>
+          <button type="button" onClick={() => fileInputRef.current?.click()} className="ghost">
             Импорт JSON
           </button>
           <button type="button" onClick={onResetDemo} className="ghost">
             Демо
+          </button>
+          <button type="button" onClick={onToggleTheme} className="ghost">
+            {theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}
           </button>
           <button type="button" onClick={onTogglePreview}>
             {previewMode ? 'Редактирование' : 'Предпросмотр'}
@@ -76,6 +89,12 @@ export const TopBar = ({
           <button type="button" className="primary" onClick={onDownloadHtml}>
             Скачать HTML
           </button>
+          {currentUsername ? <span className="topbar-user">{currentUsername}</span> : null}
+          {currentUsername ? (
+            <button type="button" onClick={onLogout}>
+              Выйти
+            </button>
+          ) : null}
         </div>
       </div>
 

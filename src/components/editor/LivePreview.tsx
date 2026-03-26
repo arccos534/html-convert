@@ -194,7 +194,11 @@ export const LivePreview = ({ documentData }: LivePreviewProps) => {
           <button type="button" className="preview-back-button" onClick={() => setScreen('feed')}>
             К списку новостей
           </button>
-          <iframe title="Предпросмотр статьи" srcDoc={articleHtml} sandbox="" />
+          <iframe
+            title="Предпросмотр статьи"
+            srcDoc={articleHtml}
+            sandbox="allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation"
+          />
         </div>
       )}
     </section>

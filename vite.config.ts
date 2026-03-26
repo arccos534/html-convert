@@ -4,8 +4,14 @@ import os from 'node:os'
 import path from 'node:path'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+// @ts-expect-error Vite config consumes the runtime .mjs helper directly.
+import { createApiHandler } from './server/api.mjs'
 
 const scriptPath = path.resolve(__dirname, 'scripts', 'export-excel-visual.ps1')
+const apiHandler = createApiHandler({
+  dataDir: path.resolve(__dirname, '.local-server-data'),
+  jwtSecret: process.env.JWT_SECRET || 'local-dev-secret',
+})
 
 const readJsonBody = async (request: NodeJS.ReadableStream) => {
   const chunks: Buffer[] = []
@@ -96,6 +102,19 @@ const localExcelImportPlugin = () => ({
   name: 'local-excel-visual-import',
   configureServer(server: { middlewares: { use: (handler: (req: unknown, res: unknown, next: () => void) => void) => void } }) {
     server.middlewares.use(async (req, res, next) => {
+      const apiHandled = await apiHandler(
+        req as unknown as NodeJS.ReadableStream & { method?: string; url?: string; headers: Record<string, string> },
+        res as unknown as {
+          statusCode: number
+          setHeader: (name: string, value: string) => void
+          end: (chunk?: string) => void
+        },
+      )
+
+      if (apiHandled) {
+        return
+      }
+
       const handled = await excelVisualImportMiddleware(
         req as { method?: string; url?: string },
         res as {

@@ -127,6 +127,19 @@ button {
   background: #f1f6ff;
 }
 
+.topbar-user {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid #d7e4f5;
+  border-radius: 999px;
+  background: #f8fbff;
+  color: #46688f;
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .global-rt-toolbar {
   border-top: 1px solid #e6eefb;
   padding-top: 14px;
@@ -2297,6 +2310,233 @@ th {
   line-height: 1.45;
   resize: vertical;
   min-height: 420px;
+}
+
+.auth-modal-card {
+  width: min(460px, 100%);
+}
+
+.auth-modal-body,
+.workspace-modal-body {
+  padding: 18px;
+  display: grid;
+  gap: 14px;
+}
+
+.auth-modal-body label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: #445c7c;
+}
+
+.auth-modal-body input {
+  border: 1px solid #ccdbee;
+  border-radius: 10px;
+  background: #fff;
+  padding: 10px 12px;
+}
+
+.auth-mode-switch {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.auth-mode-switch button,
+.auth-actions button,
+.workspace-item-actions button {
+  border: 1px solid #cbdcf2;
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 8px 12px;
+  color: #1e67dc;
+}
+
+.auth-mode-switch button.is-active,
+.auth-actions button.primary {
+  background: #1e67dc;
+  border-color: #1e67dc;
+  color: #fff;
+}
+
+.auth-error {
+  margin: 0;
+  color: #c0392b;
+  font-size: 13px;
+}
+
+.workspace-modal-card {
+  width: min(760px, 100%);
+}
+
+.workspace-list {
+  display: grid;
+  gap: 10px;
+}
+
+.workspace-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid #dbe7f8;
+  border-radius: 12px;
+  background: #f8fbff;
+}
+
+.workspace-item-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.workspace-item-copy strong {
+  font-size: 15px;
+  color: #1c355b;
+}
+
+.workspace-item-copy span {
+  font-size: 12px;
+  color: #6b809d;
+}
+
+.workspace-item-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.workspace-empty-state {
+  margin: 0;
+}
+
+html[data-theme='dark'] body {
+  color: #e6edf8;
+  background: radial-gradient(circle at 0% 0%, #0f182b 0%, #0d1522 38%, #0a1019 100%);
+}
+
+html[data-theme='dark'] .topbar,
+html[data-theme='dark'] .panel,
+html[data-theme='dark'] .editor-main,
+html[data-theme='dark'] .canvas-item,
+html[data-theme='dark'] .modal-card {
+  background: #101a2b;
+  border-color: #22324d;
+  box-shadow: 0 18px 34px rgba(1, 7, 14, 0.45);
+}
+
+html[data-theme='dark'] .canvas-item-header,
+html[data-theme='dark'] .live-preview-header,
+html[data-theme='dark'] .global-rt-toolbar .rt-toolbar,
+html[data-theme='dark'] .rt-toolbar {
+  background: #131f34;
+  border-color: #22324d;
+}
+
+html[data-theme='dark'] .brand,
+html[data-theme='dark'] .panel-header p,
+html[data-theme='dark'] .library-group h3,
+html[data-theme='dark'] .library-card span,
+html[data-theme='dark'] .modal-title-group p,
+html[data-theme='dark'] .workspace-item-copy span {
+  color: #8ea5c7;
+}
+
+html[data-theme='dark'] .panel-header h2,
+html[data-theme='dark'] .canvas-item-header strong,
+html[data-theme='dark'] .workspace-item-copy strong,
+html[data-theme='dark'] .modal-card header h3 {
+  color: #edf3ff;
+}
+
+html[data-theme='dark'] .library-card,
+html[data-theme='dark'] .empty-state,
+html[data-theme='dark'] .workspace-item,
+html[data-theme='dark'] .settings-inline-card,
+html[data-theme='dark'] .column-item,
+html[data-theme='dark'] .card-item,
+html[data-theme='dark'] .stat-card,
+html[data-theme='dark'] .content-block.chart-block-shell {
+  background: #131f34;
+  border-color: #22324d;
+}
+
+html[data-theme='dark'] .title-input,
+html[data-theme='dark'] .inline-edit-input,
+html[data-theme='dark'] .inline-edit-textarea,
+html[data-theme='dark'] .settings-stack input,
+html[data-theme='dark'] .settings-stack textarea,
+html[data-theme='dark'] .settings-stack select,
+html[data-theme='dark'] .auth-modal-body input,
+html[data-theme='dark'] .rt-inline-field input,
+html[data-theme='dark'] .rt-inline-field select {
+  background: #0d1625;
+  border-color: #2b3c5c;
+  color: #edf3ff;
+}
+
+html[data-theme='dark'] .topbar-actions button,
+html[data-theme='dark'] .modal-card header button,
+html[data-theme='dark'] .settings-item-head button,
+html[data-theme='dark'] .settings-action-button,
+html[data-theme='dark'] .auth-mode-switch button,
+html[data-theme='dark'] .auth-actions button,
+html[data-theme='dark'] .workspace-item-actions button {
+  background: #14233a;
+  border-color: #294263;
+  color: #dbe7fb;
+}
+
+html[data-theme='dark'] .topbar-actions button.primary,
+html[data-theme='dark'] .auth-mode-switch button.is-active,
+html[data-theme='dark'] .auth-actions button.primary,
+html[data-theme='dark'] .rt-btn.is-active {
+  background: #2d6cea;
+  border-color: #2d6cea;
+  color: #fff;
+}
+
+html[data-theme='dark'] .topbar-actions button.ghost,
+html[data-theme='dark'] .topbar-user {
+  background: #132033;
+  border-color: #294263;
+  color: #dbe7fb;
+}
+
+html[data-theme='dark'] .rt-wrapper,
+html[data-theme='dark'] .global-rt-toolbar {
+  border-color: #22324d;
+}
+
+html[data-theme='dark'] .block-title-edit,
+html[data-theme='dark'] .news-intro-title-edit,
+html[data-theme='dark'] .chart-title-richtext h1,
+html[data-theme='dark'] .chart-title-richtext h2,
+html[data-theme='dark'] .chart-title-richtext h3,
+html[data-theme='dark'] .content-block,
+html[data-theme='dark'] .rt-editor {
+  color: #edf3ff;
+}
+
+html[data-theme='dark'] .news-intro-subtitle,
+html[data-theme='dark'] .block-text-edit,
+html[data-theme='dark'] .stat-description,
+html[data-theme='dark'] .stat-label,
+html[data-theme='dark'] .chart-row span,
+html[data-theme='dark'] .settings-stack label,
+html[data-theme='dark'] .settings-tip {
+  color: #a9bdd8;
+}
+
+html[data-theme='dark'] .chart-line,
+html[data-theme='dark'] .chart-bar-wrap,
+html[data-theme='dark'] .chart-column-track,
+html[data-theme='dark'] .chart-line-svg {
+  background: #17263d;
+  border-color: #2a3b5c;
+}
+
+html[data-theme='dark'] .notice {
+  background: #081320;
 }
 
 @media (max-width: 1380px) {
