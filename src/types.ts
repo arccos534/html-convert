@@ -24,7 +24,9 @@ export interface SpacingSettings {
 
 export interface HeroData {
   title: string
+  titleHtml?: string
   subtitle: string
+  subtitleHtml?: string
   backgroundEnabled: boolean
   backgroundColorA: string
   backgroundColorB: string
@@ -58,6 +60,9 @@ export interface CalloutData {
 export interface ImportantData {
   title: string
   content: string
+  accentColor: string
+  borderColor: string
+  radius: number
 }
 
 export interface QuoteData {
@@ -89,6 +94,13 @@ export interface ButtonData {
   url: string
   align: TextAlign
   variant: 'primary' | 'secondary' | 'ghost'
+  backgroundColor: string
+  textColor: string
+  borderColor: string
+  backgroundOpacity: number
+  size: number
+  borderWidth: number
+  radius: number
 }
 
 export interface TableData {
@@ -157,11 +169,15 @@ export interface ChartData {
   titleHtml?: string
   description: string
   descriptionHtml?: string
+  textHtml?: string
   max: number
-  importSource?: 'manual' | 'excel' | 'image'
+  importSource?: 'manual' | 'excel' | 'excelVisual' | 'image'
   imageSrc?: string
   imageAlt?: string
   align: TextAlign
+  imageWidth?: number
+  imageTextSide?: 'left' | 'right'
+  frameEnabled?: boolean
   tableHeaders?: string[]
   tableRows?: string[][]
   autoMax?: boolean

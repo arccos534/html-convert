@@ -1,5 +1,6 @@
-﻿import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { v4 as uuidv4 } from 'uuid'
+import { RichTextToolbarProvider } from './components/blocks/RichTextToolbarContext'
 import { BlockLibrary } from './components/editor/BlockLibrary'
 import { EditorCanvas } from './components/editor/EditorCanvas'
 import { HtmlModal } from './components/editor/HtmlModal'
@@ -52,7 +53,9 @@ const normalizeDocument = (value: unknown): ArticleDocument | null => {
         ...block,
         data: {
           title: String(data.title || 'Заголовок главной новости'),
+          titleHtml: String(data.titleHtml || `<h1>${String(data.title || 'Заголовок главной новости')}</h1>`),
           subtitle: String(data.subtitle || ''),
+          subtitleHtml: String(data.subtitleHtml || `<p>${String(data.subtitle || '')}</p>`),
           backgroundEnabled:
             typeof data.backgroundEnabled === 'boolean'
               ? data.backgroundEnabled
@@ -262,6 +265,8 @@ function App() {
     setNotice('Черновик загружен из localStorage')
   }
 
+  void loadLocalDraft
+
   const loadDraftFile = async (file: File) => {
     try {
       const content = await readFileAsText(file)
@@ -294,72 +299,70 @@ function App() {
   }
 
   return (
-    <div className="app-shell">
-      <TopBar
-        title={documentData.title}
-        previewMode={previewMode}
-        canUndo={history.length > 0}
-        canRedo={future.length > 0}
-        onTitleChange={(title) => commitDocument({ ...documentData, title })}
-        onUndo={undo}
-        onRedo={redo}
-        onSaveDraft={saveDraft}
-        onLoadLocalDraft={loadLocalDraft}
-        onLoadDraftFile={loadDraftFile}
-        onTogglePreview={() => setPreviewMode((value) => !value)}
-        onExportHtml={() => setHtmlModalOpen(true)}
-        onCopyHtml={copyHtml}
-        onDownloadHtml={downloadHtml}
-        onResetDemo={() => {
-          const demo = createDemoDocument()
-          replaceDocument(demo, demo.blocks[0]?.id ?? null)
-          setNotice('Загружена демо-страница')
-        }}
-      />
+    <RichTextToolbarProvider>
+      <div className="app-shell">
+        <TopBar
+          title={documentData.title}
+          previewMode={previewMode}
+          canUndo={history.length > 0}
+          canRedo={future.length > 0}
+          onTitleChange={(title) => commitDocument({ ...documentData, title })}
+          onUndo={undo}
+          onRedo={redo}
+          onSaveDraft={saveDraft}
+          onLoadDraftFile={loadDraftFile}
+          onTogglePreview={() => setPreviewMode((value) => !value)}
+          onCopyHtml={copyHtml}
+          onDownloadHtml={downloadHtml}
+          onResetDemo={() => {
+            const demo = createDemoDocument()
+            replaceDocument(demo, demo.blocks[0]?.id ?? null)
+            setNotice('Загружена демо-страница')
+          }}
+        />
 
-      <div className={`workspace ${previewMode ? 'workspace-preview' : ''}`}>
-        {!previewMode && <BlockLibrary templates={blockTemplates} onAddBlock={addBlock} />}
+        <div className={`workspace ${previewMode ? 'workspace-preview' : ''}`}>
+          {!previewMode && <BlockLibrary templates={blockTemplates} onAddBlock={addBlock} />}
 
-        <main className={`editor-main ${previewMode ? 'editor-main-preview' : ''}`}>
-          {previewMode ? (
-            <LivePreview documentData={documentData} />
-          ) : (
-            <EditorCanvas
-              blocks={documentData.blocks}
-              selectedBlockId={selectedBlockId}
-              editable={!previewMode}
-              onSelectBlock={setSelectedBlockId}
-              onChangeBlock={updateBlock}
-              onDeleteBlock={deleteBlock}
-              onDuplicateBlock={duplicateBlock}
-              onReorderBlocks={(blocks) => commitDocument({ ...documentData, blocks })}
+          <main className={`editor-main ${previewMode ? 'editor-main-preview' : ''}`}>
+            {previewMode ? (
+              <LivePreview documentData={documentData} />
+            ) : (
+              <EditorCanvas
+                blocks={documentData.blocks}
+                selectedBlockId={selectedBlockId}
+                editable={!previewMode}
+                onSelectBlock={setSelectedBlockId}
+                onChangeBlock={updateBlock}
+                onDeleteBlock={deleteBlock}
+                onDuplicateBlock={duplicateBlock}
+                onReorderBlocks={(blocks) => commitDocument({ ...documentData, blocks })}
+              />
+            )}
+          </main>
+
+          {!previewMode && (
+            <SettingsPanel
+              block={selectedBlock}
+              settings={documentData.settings}
+              onUpdateBlock={updateBlock}
+              onUpdateSettings={(settings) => commitDocument({ ...documentData, settings })}
             />
           )}
-        </main>
+        </div>
 
-        {!previewMode && (
-          <SettingsPanel
-            block={selectedBlock}
-            settings={documentData.settings}
-            onUpdateBlock={updateBlock}
-            onUpdateSettings={(settings) => commitDocument({ ...documentData, settings })}
-          />
-        )}
+        {notice && <div className="notice">{notice}</div>}
+
+        <HtmlModal
+          open={isHtmlModalOpen}
+          html={exportedHtml}
+          onClose={() => setHtmlModalOpen(false)}
+          onCopy={copyHtml}
+          onDownload={downloadHtml}
+        />
       </div>
-
-      {notice && <div className="notice">{notice}</div>}
-
-      <HtmlModal
-        open={isHtmlModalOpen}
-        html={exportedHtml}
-        onClose={() => setHtmlModalOpen(false)}
-        onCopy={copyHtml}
-        onDownload={downloadHtml}
-      />
-    </div>
+    </RichTextToolbarProvider>
   )
 }
 
 export default App
-
-

@@ -9,6 +9,7 @@ import type {
 } from '../types'
 import { createDefaultHeroBackground } from '../lib/heroBackground'
 import { createColumns, DEFAULT_COLUMN_HEIGHT, DEFAULT_COLUMN_WIDTH } from '../lib/columns'
+import { getButtonPreset } from '../lib/buttonStyle'
 
 const createSpacing = (marginTop = 14, marginBottom = 14): SpacingSettings => ({
   marginTop,
@@ -54,14 +55,16 @@ export const createBlock = (type: BlockType): ArticleBlock => {
         spacing: createSpacing(0, 18),
         data: {
           title: 'Заголовок главной новости',
+          titleHtml: '<h1>Заголовок главной новости</h1>',
           subtitle: 'Короткий подзаголовок с контекстом и ключевым сообщением.',
+          subtitleHtml: '<p>Короткий подзаголовок с контекстом и ключевым сообщением.</p>',
           backgroundEnabled: heroBackground.enabled,
           backgroundColorA: heroBackground.colorA,
           backgroundColorB: heroBackground.colorB,
           backgroundAngle: heroBackground.angle,
           backgroundStopA: heroBackground.stopA,
           backgroundStopB: heroBackground.stopB,
-          textColor: '#ffffff',
+          textColor: '#1b2438',
           align: 'left',
         },
       }
@@ -110,6 +113,9 @@ export const createBlock = (type: BlockType): ArticleBlock => {
           title: 'Важно',
           content:
             'Критически важная информация для читателя: ограничения, сроки, контактные данные.',
+          accentColor: '#f7c476',
+          borderColor: '#f7c476',
+          radius: 14,
         },
       }
     case 'quote':
@@ -155,6 +161,7 @@ export const createBlock = (type: BlockType): ArticleBlock => {
         },
       }
     case 'button':
+      const buttonPreset = getButtonPreset('primary')
       return {
         id,
         type,
@@ -164,6 +171,13 @@ export const createBlock = (type: BlockType): ArticleBlock => {
           url: 'https://example.com',
           align: 'left',
           variant: 'primary',
+          backgroundColor: buttonPreset.backgroundColor,
+          textColor: buttonPreset.textColor,
+          borderColor: buttonPreset.borderColor,
+          backgroundOpacity: 100,
+          size: 100,
+          borderWidth: buttonPreset.borderWidth,
+          radius: buttonPreset.radius,
         },
       }
     case 'table':
@@ -257,11 +271,15 @@ export const createBlock = (type: BlockType): ArticleBlock => {
           titleHtml: '<h3>Динамика публикаций</h3>',
           description: 'Количество опубликованных материалов по дням недели',
           descriptionHtml: '<p>Количество опубликованных материалов по дням недели</p>',
+          textHtml: '',
           max: 100,
           importSource: 'manual',
           imageSrc: '',
           imageAlt: 'Диаграмма',
           align: 'left',
+          imageWidth: 100,
+          imageTextSide: 'right',
+          frameEnabled: true,
           tableHeaders: [],
           tableRows: [],
           autoMax: false,
@@ -303,7 +321,7 @@ export const blockTemplates: BlockTemplate[] = [
   },
   {
     type: 'columns',
-    name: '2-3 колонки',
+    name: 'Колонки',
     description: 'Секция с колонками и тезисами',
     category: 'Templates',
   },
@@ -323,7 +341,7 @@ export const blockTemplates: BlockTemplate[] = [
     type: 'chart',
     name: 'Диаграмма',
     description: 'Простой график по значениям',
-    category: 'Templates',
+    category: 'Media',
   },
   {
     type: 'richText',
@@ -332,21 +350,9 @@ export const blockTemplates: BlockTemplate[] = [
     category: 'Text',
   },
   {
-    type: 'callout',
-    name: 'Плашка',
-    description: 'Информационный callout-блок',
-    category: 'Highlights',
-  },
-  {
     type: 'important',
     name: 'Важно',
     description: 'Акцентный блок-предупреждение',
-    category: 'Highlights',
-  },
-  {
-    type: 'background',
-    name: 'Блок с фоном',
-    description: 'Секция с цветным фоном',
     category: 'Highlights',
   },
   {
@@ -362,22 +368,10 @@ export const blockTemplates: BlockTemplate[] = [
     category: 'Layout',
   },
   {
-    type: 'table',
-    name: 'Таблица',
-    description: 'Табличные данные',
-    category: 'Data',
-  },
-  {
     type: 'image',
     name: 'Изображение',
     description: 'Картинка с подписью и настройками',
     category: 'Media',
-  },
-  {
-    type: 'stats',
-    name: 'Статистика',
-    description: 'Инфоблок с числами',
-    category: 'Data',
   },
 ]
 

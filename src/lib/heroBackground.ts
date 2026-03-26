@@ -27,3 +27,11 @@ export const buildHeroBackground = (data: HeroData) => {
 
   return `linear-gradient(${data.backgroundAngle}deg, ${data.backgroundColorA} ${data.backgroundStopA}%, ${data.backgroundColorB} ${data.backgroundStopB}%)`
 }
+
+export const getHeroTextColor = (data: HeroData) => {
+  if (!data.backgroundEnabled && (!data.textColor || data.textColor.toLowerCase() === '#ffffff')) {
+    return '#1b2438'
+  }
+
+  return data.textColor
+}

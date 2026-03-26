@@ -10,7 +10,8 @@ import type {
   TableData,
 } from '../types'
 import { buildColumnsStyle } from './columns'
-import { buildHeroBackground } from './heroBackground'
+import { buildHeroBackground, getHeroTextColor } from './heroBackground'
+import { resolveButtonStyle } from './buttonStyle'
 
 export const EXPORT_ROOT_CLASS = 'bitrix-news-builder-content'
 
@@ -24,8 +25,34 @@ export const escapeHtml = (value: string): string =>
 
 const escapeAttr = (value: string): string => escapeHtml(value)
 
+const hexToRgba = (hex: string, alpha: number): string => {
+  const normalized = hex.replace('#', '').trim()
+  const full =
+    normalized.length === 3
+      ? normalized
+          .split('')
+          .map((char) => `${char}${char}`)
+          .join('')
+      : normalized
+
+  if (!/^[0-9a-f]{6}$/i.test(full)) {
+    return `rgba(247, 196, 118, ${alpha})`
+  }
+
+  const r = Number.parseInt(full.slice(0, 2), 16)
+  const g = Number.parseInt(full.slice(2, 4), 16)
+  const b = Number.parseInt(full.slice(4, 6), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
 const inlineSpacing = (spacing: SpacingSettings): string =>
   `margin-top:${spacing.marginTop}px;margin-bottom:${spacing.marginBottom}px;`
+
+const getHeroTitleHtml = (data: { titleHtml?: string; title: string }) =>
+  data.titleHtml || `<h1>${escapeHtml(data.title)}</h1>`
+
+const getHeroSubtitleHtml = (data: { subtitleHtml?: string; subtitle: string }) =>
+  data.subtitleHtml || `<p>${escapeHtml(data.subtitle)}</p>`
 
 const alignToFlex = (align: 'left' | 'center' | 'right'): string => {
   if (align === 'center') {
@@ -38,15 +65,11 @@ const alignToFlex = (align: 'left' | 'center' | 'right'): string => {
 }
 
 const renderButton = (data: ButtonData) => {
-  const classByVariant: Record<ButtonData['variant'], string> = {
-    primary: 'btn-primary',
-    secondary: 'btn-secondary',
-    ghost: 'btn-ghost',
-  }
+  const buttonStyle = resolveButtonStyle(data)
 
   return `
     <div class="btn-row" style="justify-content:${alignToFlex(data.align)};">
-      <a class="news-btn ${classByVariant[data.variant]}" href="${escapeAttr(data.url)}" target="_blank" rel="noreferrer noopener">
+      <a class="news-btn" href="${escapeAttr(data.url)}" target="_blank" rel="noreferrer noopener" style="background:${escapeAttr(buttonStyle.backgroundColor)};color:${escapeAttr(buttonStyle.textColor)};border:${buttonStyle.borderWidth}px solid ${escapeAttr(buttonStyle.borderColor)};border-radius:${buttonStyle.radius}px;font-size:${buttonStyle.fontSize}px;padding:${buttonStyle.paddingY}px ${buttonStyle.paddingX}px;">
         ${escapeHtml(data.label)}
       </a>
     </div>
@@ -147,9 +170,11 @@ const getChartTitleHtml = (data: { titleHtml?: string; title: string }) =>
 const getChartDescriptionHtml = (data: { descriptionHtml?: string; description: string }) =>
   data.descriptionHtml || `<p>${escapeHtml(data.description)}</p>`
 
+const getChartSideTextHtml = (data: { textHtml?: string }) => data.textHtml || ''
+
 const getChartMax = (data: {
   max: number
-  importSource?: 'manual' | 'excel' | 'image'
+  importSource?: 'manual' | 'excel' | 'excelVisual' | 'image'
   autoMax?: boolean
   items: Array<{ value: number }>
 }) =>
@@ -187,16 +212,20 @@ const renderImage = (data: ImageData) => {
 const renderChart = (data: ChartData) => {
   if (data.imageSrc) {
     const chartAlign = data.align || 'left'
+    const hasSideText = hasMeaningfulHtml(data.textHtml)
     return `
-      <section class="chart-block">
+      <section class="chart-block ${data.frameEnabled === false ? 'chart-frame-off' : ''}">
         <header>
           <div class="chart-title-richtext rich-text">${getChartTitleHtml(data)}</div>
           ${getChartDescriptionHtml(data)}
         </header>
         <div class="chart-body">
           <div class="chart-import-shell chart-import-shell-${chartAlign}">
-            <div class="chart-image-wrap">
-              <img class="chart-imported-image" src="${escapeAttr(data.imageSrc)}" alt="${escapeAttr(data.imageAlt || data.title || 'Диаграмма')}" />
+            <div class="chart-image-layout chart-image-side-${data.imageTextSide || 'right'} ${hasSideText ? 'has-text' : 'no-text'}">
+              <div class="chart-image-wrap" style="width:${Math.max(30, Math.min(100, data.imageWidth || 100))}%;">
+                <img class="chart-imported-image" src="${escapeAttr(data.imageSrc)}" alt="${escapeAttr(data.imageAlt || data.title || 'Диаграмма')}" />
+              </div>
+              ${hasSideText ? `<div class="chart-copy-richtext rich-text">${getChartSideTextHtml(data)}</div>` : ''}
             </div>
           </div>
         </div>
@@ -223,7 +252,7 @@ const renderChart = (data: ChartData) => {
     .join('')
 
   return `
-    <section class="chart-block">
+    <section class="chart-block ${data.frameEnabled === false ? 'chart-frame-off' : ''}">
       <header>
         <div class="chart-title-richtext rich-text">${getChartTitleHtml(data)}</div>
         ${getChartDescriptionHtml(data)}
@@ -241,9 +270,9 @@ const renderBlock = (block: ArticleBlock): string => {
   switch (block.type) {
     case 'hero':
       return `
-        <section class="news-block hero ${block.data.backgroundEnabled ? '' : 'hero-plain'}" style="${style}background:${escapeAttr(buildHeroBackground(block.data))};color:${escapeAttr(block.data.textColor)};text-align:${block.data.align};">
-          <h1>${escapeHtml(block.data.title)}</h1>
-          <p class="hero-subtitle">${escapeHtml(block.data.subtitle)}</p>
+        <section class="news-block hero ${block.data.backgroundEnabled ? '' : 'hero-plain'}" style="${style}background:${escapeAttr(buildHeroBackground(block.data))};color:${escapeAttr(getHeroTextColor(block.data))};text-align:${block.data.align};">
+          <div class="hero-richtext hero-title-richtext">${getHeroTitleHtml(block.data)}</div>
+          <div class="hero-richtext hero-subtitle-richtext">${getHeroSubtitleHtml(block.data)}</div>
         </section>
       `
     case 'newsIntro':
@@ -269,7 +298,7 @@ const renderBlock = (block: ArticleBlock): string => {
       `
     case 'important':
       return `
-        <aside class="news-block important" style="${style}">
+        <aside class="news-block important" style="${style}border-color:${escapeAttr(block.data.borderColor || block.data.accentColor || '#f7c476')};background:${escapeAttr(hexToRgba(block.data.accentColor || '#f7c476', 0.22))};border-radius:${Math.max(0, block.data.radius ?? 14)}px;">
           <h3>${escapeHtml(block.data.title)}</h3>
           <p>${escapeHtml(block.data.content)}</p>
         </aside>
@@ -348,7 +377,7 @@ export const exportCss = `
     --brand: #1864f2;
     --paragraph-gap: 14px;
     color: var(--text);
-    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    font-family: "Open Sans", "Helvetica Neue", Arial, sans-serif;
     line-height: 1.55;
   }
 
@@ -837,6 +866,11 @@ export const exportCss = `
     padding: 16px;
   }
 
+  .${EXPORT_ROOT_CLASS} .chart-block.chart-frame-off {
+    border: 0;
+    border-radius: 0;
+  }
+
   .${EXPORT_ROOT_CLASS} .chart-title-richtext h1,
   .${EXPORT_ROOT_CLASS} .chart-title-richtext h2,
   .${EXPORT_ROOT_CLASS} .chart-title-richtext h3 {
@@ -879,11 +913,14 @@ export const exportCss = `
 
   .${EXPORT_ROOT_CLASS} .chart-image-wrap {
     display: block;
+    flex: 0 0 auto;
+    width: 100%;
+    max-width: 100%;
   }
 
   .${EXPORT_ROOT_CLASS} .chart-imported-image {
     display: block;
-    width: auto;
+    width: 100%;
     max-width: 100%;
     height: auto;
   }
@@ -891,6 +928,25 @@ export const exportCss = `
   .${EXPORT_ROOT_CLASS} .chart-import-shell {
     display: flex;
     width: 100%;
+  }
+
+  .${EXPORT_ROOT_CLASS} .chart-image-layout {
+    width: 100%;
+    display: flex;
+    align-items: start;
+    gap: 22px;
+  }
+
+  .${EXPORT_ROOT_CLASS} .chart-image-layout.no-text {
+    display: block;
+  }
+
+  .${EXPORT_ROOT_CLASS} .chart-image-side-left .chart-image-wrap {
+    order: 2;
+  }
+
+  .${EXPORT_ROOT_CLASS} .chart-image-side-left .chart-copy-richtext {
+    order: 1;
   }
 
   .${EXPORT_ROOT_CLASS} .chart-import-shell-left {
@@ -903,6 +959,31 @@ export const exportCss = `
 
   .${EXPORT_ROOT_CLASS} .chart-import-shell-right {
     justify-content: flex-end;
+  }
+
+  .${EXPORT_ROOT_CLASS} .chart-copy-richtext {
+    min-width: 0;
+    flex: 1 1 0;
+  }
+
+  .${EXPORT_ROOT_CLASS} .chart-copy-richtext p,
+  .${EXPORT_ROOT_CLASS} .chart-copy-richtext ul,
+  .${EXPORT_ROOT_CLASS} .chart-copy-richtext ol,
+  .${EXPORT_ROOT_CLASS} .chart-copy-richtext blockquote,
+  .${EXPORT_ROOT_CLASS} .chart-copy-richtext h1,
+  .${EXPORT_ROOT_CLASS} .chart-copy-richtext h2,
+  .${EXPORT_ROOT_CLASS} .chart-copy-richtext h3 {
+    margin: 0 0 10px;
+  }
+
+  .${EXPORT_ROOT_CLASS} .chart-copy-richtext p:last-child,
+  .${EXPORT_ROOT_CLASS} .chart-copy-richtext ul:last-child,
+  .${EXPORT_ROOT_CLASS} .chart-copy-richtext ol:last-child,
+  .${EXPORT_ROOT_CLASS} .chart-copy-richtext blockquote:last-child,
+  .${EXPORT_ROOT_CLASS} .chart-copy-richtext h1:last-child,
+  .${EXPORT_ROOT_CLASS} .chart-copy-richtext h2:last-child,
+  .${EXPORT_ROOT_CLASS} .chart-copy-richtext h3:last-child {
+    margin-bottom: 0;
   }
 
   .${EXPORT_ROOT_CLASS} .chart-row {
@@ -1042,12 +1123,15 @@ export const exportCss = `
     }
 
     .${EXPORT_ROOT_CLASS} .image-layout,
+    .${EXPORT_ROOT_CLASS} .chart-image-layout,
     .${EXPORT_ROOT_CLASS} .image-side-right {
       grid-template-columns: 1fr;
     }
 
     .${EXPORT_ROOT_CLASS} .image-side-right .image-block,
-    .${EXPORT_ROOT_CLASS} .image-side-right .image-copy-richtext {
+    .${EXPORT_ROOT_CLASS} .image-side-right .image-copy-richtext,
+    .${EXPORT_ROOT_CLASS} .chart-image-side-left .chart-image-wrap,
+    .${EXPORT_ROOT_CLASS} .chart-image-side-left .chart-copy-richtext {
       order: initial;
     }
 

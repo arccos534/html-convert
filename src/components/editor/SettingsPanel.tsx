@@ -28,6 +28,8 @@ import {
   renderChartItemsToSvgDataUrl,
   renderTableToSvgDataUrl,
 } from '../../lib/chartImport'
+import { importExactSpreadsheetVisual } from '../../lib/excelVisualImport'
+import { getButtonPreset, resolveButtonStyle } from '../../lib/buttonStyle'
 
 interface SettingsPanelProps {
   block: ArticleBlock | null
@@ -218,7 +220,7 @@ export const SettingsPanel = ({
       divider: 'Разделитель',
       button: 'Кнопка',
       table: 'Таблица',
-      columns: '2-3 колонки',
+      columns: 'Колонки',
       cards: 'Карточки',
       image: 'Изображение',
       stats: 'Статистика',
@@ -407,13 +409,13 @@ export const SettingsPanel = ({
           <div className="settings-inline-card settings-item-card">
             <label>
               Максимум шкалы
-              <input
-                type="number"
-                min={1}
-                disabled={chartData.importSource === 'excel'}
-                value={chartData.max}
-                onChange={(event) =>
-                  onUpdateBlock({
+                <input
+                  type="number"
+                  min={1}
+                  disabled={chartData.importSource === 'excel' || chartData.importSource === 'excelVisual'}
+                  value={chartData.max}
+                  onChange={(event) =>
+                    onUpdateBlock({
                     ...chartBlock,
                     data: {
                       ...chartData,
@@ -443,6 +445,65 @@ export const SettingsPanel = ({
                 <option value="right">Справа</option>
               </select>
             </label>
+
+            {chartData.imageSrc ? (
+              <>
+                <label>
+                  Масштаб диаграммы: {chartData.imageWidth || 100}%
+                  <input
+                    type="range"
+                    min={30}
+                    max={100}
+                    value={chartData.imageWidth || 100}
+                    onChange={(event) =>
+                      onUpdateBlock({
+                        ...chartBlock,
+                        data: {
+                          ...chartData,
+                          imageWidth: Math.max(30, Math.min(100, number(event.target.value, chartData.imageWidth || 100))),
+                        },
+                      })
+                    }
+                  />
+                </label>
+
+                <label>
+                  Текст рядом
+                  <select
+                    value={chartData.imageTextSide || 'right'}
+                    onChange={(event) =>
+                      onUpdateBlock({
+                        ...chartBlock,
+                        data: {
+                          ...chartData,
+                          imageTextSide: event.target.value as 'left' | 'right',
+                        },
+                      })
+                    }
+                  >
+                    <option value="right">Текст справа</option>
+                    <option value="left">Текст слева</option>
+                  </select>
+                </label>
+
+                <label className="checkbox-row settings-checkbox-card">
+                  <input
+                    type="checkbox"
+                    checked={chartData.frameEnabled ?? true}
+                    onChange={(event) =>
+                      onUpdateBlock({
+                        ...chartBlock,
+                        data: {
+                          ...chartData,
+                          frameEnabled: event.target.checked,
+                        },
+                      })
+                    }
+                  />
+                  Обводка
+                </label>
+              </>
+            ) : null}
 
             <label className="checkbox-row settings-checkbox-card">
               <input
@@ -481,6 +542,22 @@ export const SettingsPanel = ({
                         /\.(svg|png|jpe?g|webp)$/i.test(fileName)
 
                       if (isSpreadsheet) {
+                        const exactVisual = await importExactSpreadsheetVisual(file)
+                        if (exactVisual) {
+                          onUpdateBlock({
+                            ...chartBlock,
+                            data: {
+                              ...chartData,
+                              importSource: 'excelVisual',
+                              imageSrc: exactVisual,
+                              imageAlt: file.name.replace(/\.[^.]+$/, '') || 'Диаграмма',
+                              tableHeaders: [],
+                              tableRows: [],
+                            },
+                          })
+                          return
+                        }
+
                         const imported = await importSpreadsheetFile(file)
                         if (!imported) {
                           window.alert('Не удалось распознать данные файла.')
@@ -493,7 +570,7 @@ export const SettingsPanel = ({
                             data: {
                               ...chartData,
                               importSource: 'excel',
-                              imageSrc: renderChartItemsToSvgDataUrl(imported.items),
+                              imageSrc: imported.svgDataUrl || renderChartItemsToSvgDataUrl(imported.items),
                               imageAlt: file.name.replace(/\.[^.]+$/, '') || 'Диаграмма',
                               items: imported.items,
                               max: imported.max,
@@ -507,7 +584,9 @@ export const SettingsPanel = ({
                             data: {
                               ...chartData,
                               importSource: 'excel',
-                              imageSrc: renderTableToSvgDataUrl(imported.headers, imported.rows),
+                              imageSrc:
+                                imported.svgDataUrl ||
+                                renderTableToSvgDataUrl(imported.headers, imported.rows),
                               imageAlt: file.name.replace(/\.[^.]+$/, '') || 'Таблица',
                               tableHeaders: imported.headers,
                               tableRows: imported.rows,
@@ -755,7 +834,7 @@ export const SettingsPanel = ({
                 <input
                   type="number"
                   min={1}
-                  disabled={chartData.importSource === 'excel'}
+                  disabled={chartData.importSource === 'excel' || chartData.importSource === 'excelVisual'}
                   value={chartData.max}
                   onChange={(event) =>
                     onUpdateBlock({
@@ -1097,7 +1176,14 @@ export const SettingsPanel = ({
                 rows={3}
                 value={block.data.title}
                 onChange={(event) =>
-                  onUpdateBlock({ ...block, data: { ...block.data, title: event.target.value } })
+                  onUpdateBlock({
+                    ...block,
+                    data: {
+                      ...block.data,
+                      title: event.target.value,
+                      titleHtml: `<h1>${event.target.value}</h1>`,
+                    },
+                  })
                 }
               />
             </label>
@@ -1108,7 +1194,14 @@ export const SettingsPanel = ({
                 rows={3}
                 value={block.data.subtitle}
                 onChange={(event) =>
-                  onUpdateBlock({ ...block, data: { ...block.data, subtitle: event.target.value } })
+                  onUpdateBlock({
+                    ...block,
+                    data: {
+                      ...block.data,
+                      subtitle: event.target.value,
+                      subtitleHtml: `<p>${event.target.value}</p>`,
+                    },
+                  })
                 }
               />
             </label>
@@ -1399,6 +1492,50 @@ export const SettingsPanel = ({
                 }
               />
             </label>
+
+            <label>
+              Цвет акцента
+              <input
+                type="color"
+                value={block.data.accentColor || '#f7c476'}
+                onChange={(event) =>
+                  onUpdateBlock({
+                    ...block,
+                    data: { ...block.data, accentColor: event.target.value },
+                  })
+                }
+              />
+            </label>
+
+            <label>
+              Цвет обводки
+              <input
+                type="color"
+                value={block.data.borderColor || block.data.accentColor || '#f7c476'}
+                onChange={(event) =>
+                  onUpdateBlock({
+                    ...block,
+                    data: { ...block.data, borderColor: event.target.value },
+                  })
+                }
+              />
+            </label>
+
+            <label>
+              Скругление: {block.data.radius ?? 14}px
+              <input
+                type="range"
+                min={0}
+                max={40}
+                value={block.data.radius ?? 14}
+                onChange={(event) =>
+                  onUpdateBlock({
+                    ...block,
+                    data: { ...block.data, radius: number(event.target.value, block.data.radius ?? 14) },
+                  })
+                }
+              />
+            </label>
           </div>
         )
 
@@ -1530,6 +1667,12 @@ export const SettingsPanel = ({
         )
 
       case 'button':
+        const buttonPreset = getButtonPreset(block.data.variant)
+        const buttonStyle = resolveButtonStyle(block.data)
+        const effectiveButtonRadiusMax = Math.max(
+          12,
+          Math.round((buttonStyle.fontSize + buttonStyle.paddingY * 2) / 2),
+        )
         return (
           <div className="settings-stack">
             <label>
@@ -1561,13 +1704,21 @@ export const SettingsPanel = ({
               <select
                 value={block.data.variant}
                 onChange={(event) =>
-                  onUpdateBlock({
-                    ...block,
-                    data: {
-                      ...block.data,
-                      variant: event.target.value as typeof block.data.variant,
-                    },
-                  })
+                  {
+                    const variant = event.target.value as typeof block.data.variant
+                    const preset = getButtonPreset(variant)
+                    onUpdateBlock({
+                      ...block,
+                      data: {
+                        ...block.data,
+                        variant,
+                        backgroundColor: preset.backgroundColor,
+                        textColor: preset.textColor,
+                        borderColor: preset.borderColor,
+                        borderWidth: preset.borderWidth,
+                      },
+                    })
+                  }
                 }
               >
                 <option value="primary">Основная</option>
@@ -1575,6 +1726,133 @@ export const SettingsPanel = ({
                 <option value="ghost">Без заливки</option>
               </select>
             </label>
+
+            <div className="settings-inline-card settings-item-card">
+              <div className="settings-compact-grid">
+                <label>
+                  Цвет фона
+                  <input
+                    type="color"
+                    value={block.data.backgroundColor || buttonPreset.backgroundColor}
+                    onChange={(event) =>
+                      onUpdateBlock({
+                        ...block,
+                        data: { ...block.data, backgroundColor: event.target.value },
+                      })
+                    }
+                  />
+                </label>
+
+                <label>
+                  Цвет текста
+                  <input
+                    type="color"
+                    value={block.data.textColor || buttonPreset.textColor}
+                    onChange={(event) =>
+                      onUpdateBlock({
+                        ...block,
+                        data: { ...block.data, textColor: event.target.value },
+                      })
+                    }
+                  />
+                </label>
+              </div>
+
+              <div className="settings-compact-grid">
+                <label>
+                  Цвет обводки
+                  <input
+                    type="color"
+                    value={block.data.borderColor || buttonPreset.borderColor}
+                    onChange={(event) =>
+                      onUpdateBlock({
+                        ...block,
+                        data: { ...block.data, borderColor: event.target.value },
+                      })
+                    }
+                  />
+                </label>
+
+                <label>
+                  Толщина обводки: {block.data.borderWidth ?? buttonPreset.borderWidth}px
+                  <input
+                    type="range"
+                    min={0}
+                    max={8}
+                    value={block.data.borderWidth ?? buttonPreset.borderWidth}
+                    onChange={(event) =>
+                      onUpdateBlock({
+                        ...block,
+                        data: {
+                          ...block.data,
+                          borderWidth: number(
+                            event.target.value,
+                            block.data.borderWidth ?? buttonPreset.borderWidth,
+                          ),
+                        },
+                      })
+                    }
+                  />
+                </label>
+              </div>
+
+              <label>
+                Прозрачность фона: {block.data.backgroundOpacity ?? 100}%
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={block.data.backgroundOpacity ?? 100}
+                  onChange={(event) =>
+                    onUpdateBlock({
+                      ...block,
+                      data: {
+                        ...block.data,
+                        backgroundOpacity: number(event.target.value, block.data.backgroundOpacity ?? 100),
+                      },
+                    })
+                  }
+                />
+              </label>
+
+              <label>
+                Размер кнопки: {block.data.size ?? 100}%
+                <input
+                  type="range"
+                  min={70}
+                  max={180}
+                  value={block.data.size ?? 100}
+                  onChange={(event) =>
+                    onUpdateBlock({
+                      ...block,
+                      data: { ...block.data, size: number(event.target.value, block.data.size ?? 100) },
+                    })
+                  }
+                />
+              </label>
+
+              <label>
+                Скругление: {block.data.radius ?? buttonPreset.radius}px
+                <input
+                  type="range"
+                  min={0}
+                  max={effectiveButtonRadiusMax}
+                  value={Math.min(block.data.radius ?? buttonPreset.radius, effectiveButtonRadiusMax)}
+                  onChange={(event) =>
+                    onUpdateBlock({
+                      ...block,
+                      data: {
+                        ...block.data,
+                        radius: number(
+                          event.target.value,
+                          Math.min(block.data.radius ?? buttonPreset.radius, effectiveButtonRadiusMax),
+                        ),
+                      },
+                    })
+                  }
+                />
+              </label>
+            </div>
           </div>
         )
 

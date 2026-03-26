@@ -9,19 +9,27 @@ export const BlockLibrary = ({ templates, onAddBlock }: BlockLibraryProps) => {
   const categoryLabels: Record<string, string> = {
     Templates: 'Шаблоны',
     Text: 'Текст',
-    Highlights: 'Акценты',
-    Layout: 'Компоновка',
+    Other: 'Другое',
     Media: 'Медиа',
     Data: 'Данные',
   }
+  const categoryOrder = ['Templates', 'Text', 'Media', 'Other', 'Data']
+  const normalizeCategory = (category: string) =>
+    category === 'Highlights' || category === 'Layout' ? 'Other' : category
 
   const grouped = templates.reduce<Record<string, BlockTemplate[]>>((acc, template) => {
-    if (!acc[template.category]) {
-      acc[template.category] = []
+    const normalizedCategory = normalizeCategory(template.category)
+    if (!acc[normalizedCategory]) {
+      acc[normalizedCategory] = []
     }
-    acc[template.category].push(template)
+    acc[normalizedCategory].push(template)
     return acc
   }, {})
+
+  const orderedGroups = [
+    ...categoryOrder.filter((category) => grouped[category]),
+    ...Object.keys(grouped).filter((category) => !categoryOrder.includes(category)),
+  ]
 
   return (
     <aside className="panel panel-left">
@@ -31,11 +39,11 @@ export const BlockLibrary = ({ templates, onAddBlock }: BlockLibraryProps) => {
       </div>
 
       <div className="library-groups">
-        {Object.entries(grouped).map(([category, items]) => (
+        {orderedGroups.map((category) => (
           <section key={category} className="library-group">
             <h3>{categoryLabels[category] ?? category}</h3>
             <div className="library-grid">
-              {items.map((item) => (
+              {grouped[category].map((item) => (
                 <button
                   key={`${category}-${item.type}`}
                   type="button"

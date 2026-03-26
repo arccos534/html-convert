@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Color from '@tiptap/extension-color'
 import Link from '@tiptap/extension-link'
 import TextAlign from '@tiptap/extension-text-align'
@@ -6,7 +6,9 @@ import { TextStyle } from '@tiptap/extension-text-style'
 import Underline from '@tiptap/extension-underline'
 import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
+import { FontFamily } from '../../extensions/fontFamily'
 import { FontSize } from '../../extensions/fontSize'
+import { useRichTextToolbar } from './RichTextToolbarContext'
 
 interface RichTextEditorProps {
   value: string
@@ -47,13 +49,24 @@ export const RichTextEditor = ({
   value,
   onChange,
   readOnly,
-  showToolbar = true,
+  showToolbar = false,
   requireSelectionForToolbarActions = false,
   align,
   paragraphGap,
   onAlignChange,
 }: RichTextEditorProps) => {
+  const { activateEditor, updateSelection, refreshToolbar, activeBinding } = useRichTextToolbar()
   const [lastSelection, setLastSelection] = useState<{ from: number; to: number } | null>(null)
+  const requireSelectionRef = useRef(requireSelectionForToolbarActions)
+  const onAlignChangeRef = useRef(onAlignChange)
+
+  useEffect(() => {
+    requireSelectionRef.current = requireSelectionForToolbarActions
+  }, [requireSelectionForToolbarActions])
+
+  useEffect(() => {
+    onAlignChangeRef.current = onAlignChange
+  }, [onAlignChange])
 
   const extensions = useMemo(
     () => [
@@ -68,6 +81,7 @@ export const RichTextEditor = ({
       }),
       TextStyle,
       Color,
+      FontFamily,
       FontSize,
       TextAlign.configure({
         types: ['heading', 'paragraph'],
@@ -90,7 +104,29 @@ export const RichTextEditor = ({
     },
     onSelectionUpdate: ({ editor }) => {
       const selection = editor.state.selection
-      setLastSelection(selection.empty ? null : { from: selection.from, to: selection.to })
+      const nextSelection = selection.empty ? null : { from: selection.from, to: selection.to }
+      setLastSelection(nextSelection)
+      if (!readOnly) {
+        activateEditor({
+          editor,
+          requireSelectionForToolbarActions: requireSelectionRef.current,
+          onAlignChange: onAlignChangeRef.current,
+        })
+        updateSelection(nextSelection)
+      }
+    },
+    onFocus: ({ editor }) => {
+      if (readOnly) {
+        return
+      }
+
+      const selection = editor.state.selection
+      activateEditor({
+        editor,
+        requireSelectionForToolbarActions: requireSelectionRef.current,
+        onAlignChange: onAlignChangeRef.current,
+      })
+      updateSelection(selection.empty ? null : { from: selection.from, to: selection.to })
     },
   })
 
@@ -113,6 +149,29 @@ export const RichTextEditor = ({
     const selection = editor.state.selection
     setLastSelection(selection.empty ? null : { from: selection.from, to: selection.to })
   }, [align, editor])
+
+  useEffect(() => {
+    if (!editor || readOnly) {
+      return
+    }
+
+    if (activeBinding?.editor === editor) {
+      activateEditor({
+        editor,
+        requireSelectionForToolbarActions,
+        onAlignChange,
+      })
+      refreshToolbar()
+    }
+  }, [
+    activeBinding?.editor,
+    activateEditor,
+    editor,
+    onAlignChange,
+    readOnly,
+    refreshToolbar,
+    requireSelectionForToolbarActions,
+  ])
 
   if (!editor) {
     return null

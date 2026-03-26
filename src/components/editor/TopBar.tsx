@@ -1,4 +1,5 @@
-﻿import { useRef } from 'react'
+import { useRef } from 'react'
+import { GlobalRichTextToolbar } from './GlobalRichTextToolbar'
 
 interface TopBarProps {
   title: string
@@ -11,10 +12,8 @@ interface TopBarProps {
   onSaveDraft: () => void
   onLoadDraftFile: (file: File) => void
   onTogglePreview: () => void
-  onExportHtml: () => void
   onCopyHtml: () => void
   onDownloadHtml: () => void
-  onLoadLocalDraft: () => void
   onResetDemo: () => void
 }
 
@@ -29,62 +28,58 @@ export const TopBar = ({
   onSaveDraft,
   onLoadDraftFile,
   onTogglePreview,
-  onExportHtml,
   onCopyHtml,
   onDownloadHtml,
-  onLoadLocalDraft,
   onResetDemo,
 }: TopBarProps) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   return (
     <header className="topbar">
-      <div className="topbar-left">
-        <p className="brand">Конструктор новостей Bitrix</p>
-        <input
-          className="title-input"
-          value={title}
-          onChange={(event) => onTitleChange(event.target.value)}
-          placeholder="Название статьи"
-        />
+      <div className="topbar-main">
+        <div className="topbar-left">
+          <p className="brand">Конструктор новостей Bitrix</p>
+          <input
+            className="title-input"
+            value={title}
+            onChange={(event) => onTitleChange(event.target.value)}
+            placeholder="Название статьи"
+          />
+        </div>
+
+        <div className="topbar-actions">
+          <button type="button" onClick={onUndo} disabled={!canUndo} title="Отменить последнее действие">
+            ↶
+          </button>
+          <button type="button" onClick={onRedo} disabled={!canRedo} title="Вернуть отмененное">
+            ↷
+          </button>
+          <button type="button" onClick={onSaveDraft}>
+            Сохранить
+          </button>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="ghost"
+          >
+            Импорт JSON
+          </button>
+          <button type="button" onClick={onResetDemo} className="ghost">
+            Демо
+          </button>
+          <button type="button" onClick={onTogglePreview}>
+            {previewMode ? 'Редактирование' : 'Предпросмотр'}
+          </button>
+          <button type="button" onClick={onCopyHtml}>
+            Копировать HTML
+          </button>
+          <button type="button" className="primary" onClick={onDownloadHtml}>
+            Скачать HTML
+          </button>
+        </div>
       </div>
 
-      <div className="topbar-actions">
-        <button type="button" onClick={onUndo} disabled={!canUndo} title="Отменить последнее действие">
-          ↶
-        </button>
-        <button type="button" onClick={onRedo} disabled={!canRedo} title="Вернуть отмененное">
-          ↷
-        </button>
-        <button type="button" onClick={onSaveDraft}>
-          Сохранить
-        </button>
-        <button type="button" onClick={onLoadLocalDraft}>
-          Открыть
-        </button>
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          className="ghost"
-        >
-          Импорт JSON
-        </button>
-        <button type="button" onClick={onResetDemo} className="ghost">
-          Демо
-        </button>
-        <button type="button" onClick={onTogglePreview}>
-          {previewMode ? 'Редактирование' : 'Предпросмотр'}
-        </button>
-        <button type="button" onClick={onExportHtml}>
-          Экспорт
-        </button>
-        <button type="button" onClick={onCopyHtml}>
-          Копировать HTML
-        </button>
-        <button type="button" className="primary" onClick={onDownloadHtml}>
-          Скачать HTML
-        </button>
-      </div>
+      {!previewMode && <GlobalRichTextToolbar />}
 
       <input
         ref={fileInputRef}

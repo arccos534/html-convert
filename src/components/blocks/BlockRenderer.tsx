@@ -1,6 +1,14 @@
-import { useRef, useState } from 'react'
+import { useRef } from 'react'
 import type { ArticleBlock } from '../../types'
-import { buildHeroBackground } from '../../lib/heroBackground'
+import { readImageAsDataUrl } from '../../lib/documentIO'
+import {
+  importSpreadsheetFile,
+  renderChartItemsToSvgDataUrl,
+  renderTableToSvgDataUrl,
+} from '../../lib/chartImport'
+import { importExactSpreadsheetVisual } from '../../lib/excelVisualImport'
+import { buildHeroBackground, getHeroTextColor } from '../../lib/heroBackground'
+import { resolveButtonStyle } from '../../lib/buttonStyle'
 import { RichTextEditor } from './RichTextEditor'
 
 interface BlockRendererProps {
@@ -46,12 +54,42 @@ const getChartTitleHtml = (data: { titleHtml?: string; title: string }) =>
 const getChartDescriptionHtml = (data: { descriptionHtml?: string; description: string }) =>
   data.descriptionHtml || `<p>${data.description}</p>`
 
+const getChartSideTextHtml = (data: { textHtml?: string }) => data.textHtml || ''
+
 const getChartCombinedHtml = (data: {
   titleHtml?: string
   title: string
   descriptionHtml?: string
   description: string
 }) => `${getChartTitleHtml(data)}${getChartDescriptionHtml(data)}`
+
+const getHeroTitleHtml = (data: { titleHtml?: string; title: string }) =>
+  data.titleHtml || `<h1>${data.title}</h1>`
+
+const getHeroSubtitleHtml = (data: { subtitleHtml?: string; subtitle: string }) =>
+  data.subtitleHtml || `<p>${data.subtitle}</p>`
+
+const parsePlainText = (html: string, fallback: string) =>
+  html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() || fallback
+
+const hexToRgba = (hex: string, alpha: number) => {
+  const normalized = hex.replace('#', '').trim()
+  const full = normalized.length === 3
+    ? normalized
+        .split('')
+        .map((char) => `${char}${char}`)
+        .join('')
+    : normalized
+
+  if (!/^[0-9a-f]{6}$/i.test(full)) {
+    return `rgba(247, 196, 118, ${alpha})`
+  }
+
+  const r = Number.parseInt(full.slice(0, 2), 16)
+  const g = Number.parseInt(full.slice(2, 4), 16)
+  const b = Number.parseInt(full.slice(4, 6), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
 
 const parseChartTextHtml = (html: string) => {
   if (typeof window === 'undefined') {
@@ -83,13 +121,161 @@ const parseChartTextHtml = (html: string) => {
 
 const getChartMax = (data: {
   max: number
-  importSource?: 'manual' | 'excel' | 'image'
+  importSource?: 'manual' | 'excel' | 'excelVisual' | 'image'
   autoMax?: boolean
   items: Array<{ value: number }>
 }) =>
   data.importSource === 'excel'
     ? Math.max(1, ...data.items.map((item) => item.value))
     : Math.max(1, data.max, ...data.items.map((item) => item.value))
+
+const stopInlineEvent = (event: React.MouseEvent | React.FocusEvent) => {
+  event.stopPropagation()
+}
+
+const applyImportedChartFile = async (
+  file: File,
+  block: Extract<ArticleBlock, { type: 'chart' }>,
+  onChange: (block: ArticleBlock) => void,
+) => {
+  const fileName = file.name.toLowerCase()
+  const isSpreadsheet = /\.(xlsx|xls|csv)$/i.test(fileName)
+  const isImageFile =
+    file.type.startsWith('image/') || /\.(svg|png|jpe?g|webp)$/i.test(fileName)
+
+  if (isSpreadsheet) {
+    const exactVisual = await importExactSpreadsheetVisual(file)
+    if (exactVisual) {
+      onChange({
+        ...block,
+        data: {
+          ...block.data,
+          importSource: 'excelVisual',
+          imageSrc: exactVisual,
+          imageAlt: file.name.replace(/\.[^.]+$/, '') || 'Диаграмма',
+          tableHeaders: [],
+          tableRows: [],
+        },
+      })
+      return
+    }
+
+    const imported = await importSpreadsheetFile(file)
+    if (!imported) {
+      window.alert('Не удалось распознать данные файла.')
+      return
+    }
+
+    if (imported.kind === 'chart') {
+      onChange({
+        ...block,
+        data: {
+          ...block.data,
+          importSource: 'excel',
+          imageSrc:
+            imported.svgDataUrl ||
+            renderChartItemsToSvgDataUrl(imported.items, {
+              title: block.data.title,
+              subtitle: block.data.description,
+            }),
+          imageAlt: file.name.replace(/\.[^.]+$/, '') || 'Диаграмма',
+          items: imported.items,
+          max: imported.max,
+          tableHeaders: [],
+          tableRows: [],
+        },
+      })
+      return
+    }
+
+    onChange({
+      ...block,
+      data: {
+        ...block.data,
+        importSource: 'excel',
+        imageSrc:
+          imported.svgDataUrl ||
+          renderTableToSvgDataUrl(imported.headers, imported.rows, {
+            title: block.data.title,
+            subtitle: block.data.description,
+          }),
+        imageAlt: file.name.replace(/\.[^.]+$/, '') || 'Таблица',
+        tableHeaders: imported.headers,
+        tableRows: imported.rows,
+      },
+    })
+    return
+  }
+
+  if (isImageFile) {
+    const src = await readImageAsDataUrl(file)
+    onChange({
+      ...block,
+      data: {
+        ...block.data,
+        importSource: 'image',
+        imageSrc: src,
+        imageAlt: file.name.replace(/\.[^.]+$/, '') || 'Диаграмма',
+        tableHeaders: [],
+        tableRows: [],
+      },
+    })
+    return
+  }
+
+  window.alert('Поддерживаются Excel, CSV и изображения.')
+}
+
+const InlineInput = ({
+  value,
+  onChange,
+  className,
+  placeholder,
+  style,
+}: {
+  value: string
+  onChange: (value: string) => void
+  className?: string
+  placeholder?: string
+  style?: React.CSSProperties
+}) => (
+  <input
+    className={`inline-edit-input ${className || ''}`.trim()}
+    value={value}
+    placeholder={placeholder}
+    style={style}
+    onClick={stopInlineEvent}
+    onFocus={stopInlineEvent}
+    onChange={(event) => onChange(event.target.value)}
+  />
+)
+
+const InlineTextarea = ({
+  value,
+  onChange,
+  className,
+  placeholder,
+  rows = 2,
+  style,
+}: {
+  value: string
+  onChange: (value: string) => void
+  className?: string
+  placeholder?: string
+  rows?: number
+  style?: React.CSSProperties
+}) => (
+  <textarea
+    className={`inline-edit-textarea ${className || ''}`.trim()}
+    value={value}
+    placeholder={placeholder}
+    rows={rows}
+    style={style}
+    onClick={stopInlineEvent}
+    onFocus={stopInlineEvent}
+    onChange={(event) => onChange(event.target.value)}
+  />
+)
 
 export const BlockRenderer = ({
   block,
@@ -99,11 +285,6 @@ export const BlockRenderer = ({
   onChange,
 }: BlockRendererProps) => {
   const canEdit = editable && selected
-  const [openColumnToolbars, setOpenColumnToolbars] = useState<Record<string, boolean>>({})
-  const [openCardToolbars, setOpenCardToolbars] = useState<Record<string, boolean>>({})
-  const [openQuoteToolbars, setOpenQuoteToolbars] = useState<Record<string, boolean>>({})
-  const [openChartToolbars, setOpenChartToolbars] = useState<Record<string, boolean>>({})
-  const [openImageToolbars, setOpenImageToolbars] = useState<Record<string, boolean>>({})
   const chartColorInputsRef = useRef<Record<string, HTMLInputElement | null>>({})
 
   switch (block.type) {
@@ -115,13 +296,66 @@ export const BlockRenderer = ({
             marginTop: block.spacing.marginTop,
             marginBottom: block.spacing.marginBottom,
             background: buildHeroBackground(block.data),
-            color: block.data.textColor,
+            color: getHeroTextColor(block.data),
             textAlign: block.data.align,
           }}
           onClick={onSelect}
         >
-          <h1>{block.data.title}</h1>
-          <p className="hero-subtitle">{block.data.subtitle}</p>
+          {canEdit ? (
+            <>
+              <div className="hero-richtext-group">
+                <RichTextEditor
+                  value={getHeroTitleHtml(block.data)}
+                  align={block.data.align}
+                  paragraphGap={10}
+                  readOnly={!canEdit}
+                  requireSelectionForToolbarActions
+                  onAlignChange={(align) => onChange({ ...block, data: { ...block.data, align } })}
+                  onChange={(titleHtml) =>
+                    onChange({
+                      ...block,
+                      data: {
+                        ...block.data,
+                        titleHtml,
+                        title: parsePlainText(titleHtml, 'Заголовок главной новости'),
+                      },
+                    })
+                  }
+                />
+              </div>
+              <div className="hero-richtext-group hero-subtitle-group">
+                <RichTextEditor
+                  value={getHeroSubtitleHtml(block.data)}
+                  align={block.data.align}
+                  paragraphGap={8}
+                  readOnly={!canEdit}
+                  requireSelectionForToolbarActions
+                  onAlignChange={(align) => onChange({ ...block, data: { ...block.data, align } })}
+                  onChange={(subtitleHtml) =>
+                    onChange({
+                      ...block,
+                      data: {
+                        ...block.data,
+                        subtitleHtml,
+                        subtitle: parsePlainText(subtitleHtml, ''),
+                      },
+                    })
+                  }
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <div
+                className="hero-richtext hero-title-richtext"
+                dangerouslySetInnerHTML={{ __html: getHeroTitleHtml(block.data) }}
+              />
+              <div
+                className="hero-richtext hero-subtitle-richtext"
+                dangerouslySetInnerHTML={{ __html: getHeroSubtitleHtml(block.data) }}
+              />
+            </>
+          )}
         </section>
       )
 
@@ -136,8 +370,27 @@ export const BlockRenderer = ({
           }}
           onClick={onSelect}
         >
-          <h2>{block.data.title}</h2>
-          <p className="news-intro-subtitle">{block.data.subtitle}</p>
+          {canEdit ? (
+            <>
+              <InlineTextarea
+                value={block.data.title}
+                className="news-intro-title-edit"
+                rows={2}
+                onChange={(title) => onChange({ ...block, data: { ...block.data, title } })}
+              />
+              <InlineTextarea
+                value={block.data.subtitle}
+                className="news-intro-subtitle-edit"
+                rows={2}
+                onChange={(subtitle) => onChange({ ...block, data: { ...block.data, subtitle } })}
+              />
+            </>
+          ) : (
+            <>
+              <h2>{block.data.title}</h2>
+              <p className="news-intro-subtitle">{block.data.subtitle}</p>
+            </>
+          )}
           <RichTextEditor
             value={block.data.leadHtml}
             align={block.data.align}
@@ -179,8 +432,26 @@ export const BlockRenderer = ({
           style={{ marginTop: block.spacing.marginTop, marginBottom: block.spacing.marginBottom }}
           onClick={onSelect}
         >
-          <h3>{block.data.title}</h3>
-          <p>{block.data.content}</p>
+          {canEdit ? (
+            <>
+              <InlineInput
+                value={block.data.title}
+                className="block-title-edit"
+                onChange={(title) => onChange({ ...block, data: { ...block.data, title } })}
+              />
+              <InlineTextarea
+                value={block.data.content}
+                className="block-text-edit"
+                rows={3}
+                onChange={(content) => onChange({ ...block, data: { ...block.data, content } })}
+              />
+            </>
+          ) : (
+            <>
+              <h3>{block.data.title}</h3>
+              <p>{block.data.content}</p>
+            </>
+          )}
         </aside>
       )
 
@@ -188,11 +459,35 @@ export const BlockRenderer = ({
       return (
         <aside
           className={`content-block important-block ${selected ? 'is-selected' : ''}`}
-          style={{ marginTop: block.spacing.marginTop, marginBottom: block.spacing.marginBottom }}
+          style={{
+            marginTop: block.spacing.marginTop,
+            marginBottom: block.spacing.marginBottom,
+            borderColor: block.data.borderColor || block.data.accentColor || '#f7c476',
+            background: hexToRgba(block.data.accentColor || '#f7c476', 0.22),
+            borderRadius: `${block.data.radius ?? 14}px`,
+          }}
           onClick={onSelect}
         >
-          <h3>{block.data.title}</h3>
-          <p>{block.data.content}</p>
+          {canEdit ? (
+            <>
+              <InlineInput
+                value={block.data.title}
+                className="block-title-edit"
+                onChange={(title) => onChange({ ...block, data: { ...block.data, title } })}
+              />
+              <InlineTextarea
+                value={block.data.content}
+                className="block-text-edit"
+                rows={3}
+                onChange={(content) => onChange({ ...block, data: { ...block.data, content } })}
+              />
+            </>
+          ) : (
+            <>
+              <h3>{block.data.title}</h3>
+              <p>{block.data.content}</p>
+            </>
+          )}
         </aside>
       )
 
@@ -211,28 +506,11 @@ export const BlockRenderer = ({
         >
           {canEdit ? (
             <>
-              <div className="quote-block-header">
-                <div className="column-item-spacer" />
-                <button
-                  type="button"
-                  className={`column-tools-toggle ${openQuoteToolbars[block.id] ? 'is-active' : ''}`}
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    setOpenQuoteToolbars((prev) => ({
-                      ...prev,
-                      [block.id]: !prev[block.id],
-                    }))
-                  }}
-                >
-                  ...
-                </button>
-              </div>
               <RichTextEditor
                 value={getQuoteHtml(block.data)}
                 align="left"
                 paragraphGap={10}
                 readOnly={!canEdit}
-                showToolbar={Boolean(openQuoteToolbars[block.id])}
                 requireSelectionForToolbarActions
                 onChange={(html) =>
                   onChange({
@@ -251,7 +529,6 @@ export const BlockRenderer = ({
                   align="left"
                   paragraphGap={6}
                   readOnly={!canEdit}
-                  showToolbar={Boolean(openQuoteToolbars[block.id])}
                   requireSelectionForToolbarActions
                   onChange={(footerHtml) =>
                     onChange({
@@ -292,7 +569,16 @@ export const BlockRenderer = ({
           }}
           onClick={onSelect}
         >
-          <h3>{block.data.title}</h3>
+          {canEdit ? (
+            <InlineInput
+              value={block.data.title}
+              className="block-title-edit"
+              style={{ color: block.data.textColor }}
+              onChange={(title) => onChange({ ...block, data: { ...block.data, title } })}
+            />
+          ) : (
+            <h3>{block.data.title}</h3>
+          )}
           <RichTextEditor
             value={block.data.contentHtml}
             align="left"
@@ -312,13 +598,23 @@ export const BlockRenderer = ({
         >
           <div className={`divider divider-${block.data.style}`}>
             <span style={{ borderColor: block.data.color }} />
-            {block.data.label && <strong>{block.data.label}</strong>}
+            {canEdit ? (
+              <InlineInput
+                value={block.data.label}
+                className="divider-label-edit"
+                placeholder="Подпись разделителя"
+                onChange={(label) => onChange({ ...block, data: { ...block.data, label } })}
+              />
+            ) : (
+              block.data.label && <strong>{block.data.label}</strong>
+            )}
             <span style={{ borderColor: block.data.color }} />
           </div>
         </section>
       )
 
     case 'button':
+      const buttonStyle = resolveButtonStyle(block.data)
       return (
         <section
           className={`content-block ${selected ? 'is-selected' : ''}`}
@@ -326,9 +622,40 @@ export const BlockRenderer = ({
           onClick={onSelect}
         >
           <div className="button-row" style={{ justifyContent: alignMap[block.data.align] }}>
-            <a className={`action-button btn-${block.data.variant}`} href={block.data.url}>
-              {block.data.label}
-            </a>
+            {canEdit ? (
+              <div
+                className="action-button"
+                style={{
+                  background: buttonStyle.backgroundColor,
+                  color: buttonStyle.textColor,
+                  border: `${buttonStyle.borderWidth}px solid ${buttonStyle.borderColor}`,
+                  borderRadius: buttonStyle.radius,
+                  fontSize: buttonStyle.fontSize,
+                  padding: `${buttonStyle.paddingY}px ${buttonStyle.paddingX}px`,
+                }}
+              >
+                <InlineInput
+                  value={block.data.label}
+                  className="button-label-edit"
+                  onChange={(label) => onChange({ ...block, data: { ...block.data, label } })}
+                />
+              </div>
+            ) : (
+              <a
+                className="action-button"
+                href={block.data.url}
+                style={{
+                  background: buttonStyle.backgroundColor,
+                  color: buttonStyle.textColor,
+                  border: `${buttonStyle.borderWidth}px solid ${buttonStyle.borderColor}`,
+                  borderRadius: buttonStyle.radius,
+                  fontSize: buttonStyle.fontSize,
+                  padding: `${buttonStyle.paddingY}px ${buttonStyle.paddingX}px`,
+                }}
+              >
+                {block.data.label}
+              </a>
+            )}
           </div>
         </section>
       )
@@ -341,15 +668,58 @@ export const BlockRenderer = ({
           onClick={onSelect}
         >
           <div className="table-editor">
-            {block.data.caption && <p className="table-caption">{block.data.caption}</p>}
+            {canEdit ? (
+              <InlineInput
+                value={block.data.caption}
+                className="table-caption-edit"
+                placeholder="Подпись таблицы"
+                onChange={(caption) => onChange({ ...block, data: { ...block.data, caption } })}
+              />
+            ) : (
+              block.data.caption && <p className="table-caption">{block.data.caption}</p>
+            )}
             <table>
               <thead>
-                <tr>{block.data.headers.map((h, i) => <th key={i}>{h}</th>)}</tr>
+                <tr>
+                  {block.data.headers.map((h, i) => (
+                    <th key={i}>
+                      {canEdit ? (
+                        <InlineInput
+                          value={h}
+                          className="table-cell-edit table-header-edit"
+                          onChange={(value) => {
+                            const headers = [...block.data.headers]
+                            headers[i] = value
+                            onChange({ ...block, data: { ...block.data, headers } })
+                          }}
+                        />
+                      ) : (
+                        h
+                      )}
+                    </th>
+                  ))}
+                </tr>
               </thead>
               <tbody>
                 {block.data.rows.map((row, rowIndex) => (
                   <tr key={`${block.id}-${rowIndex}`}>
-                    {row.map((cell, cellIndex) => <td key={`${rowIndex}-${cellIndex}`}>{cell}</td>)}
+                    {row.map((cell, cellIndex) => (
+                      <td key={`${rowIndex}-${cellIndex}`}>
+                        {canEdit ? (
+                          <InlineInput
+                            value={cell}
+                            className="table-cell-edit"
+                            onChange={(value) => {
+                              const rows = block.data.rows.map((currentRow) => [...currentRow])
+                              rows[rowIndex][cellIndex] = value
+                              onChange({ ...block, data: { ...block.data, rows } })
+                            }}
+                          />
+                        ) : (
+                          cell
+                        )}
+                      </td>
+                    ))}
                   </tr>
                 ))}
               </tbody>
@@ -376,29 +746,12 @@ export const BlockRenderer = ({
             {block.data.columns.slice(0, block.data.count).map((item, index) => (
               <article key={`${block.id}-${index}`} className="column-item">
                 {canEdit ? (
-                  <>
-                    <div className="column-item-header">
-                      <div className="column-item-spacer" />
-                      <button
-                        type="button"
-                        className={`column-tools-toggle ${openColumnToolbars[`${block.id}-${index}`] ? 'is-active' : ''}`}
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          setOpenColumnToolbars((prev) => ({
-                            ...prev,
-                            [`${block.id}-${index}`]: !prev[`${block.id}-${index}`],
-                          }))
-                        }}
-                      >
-                        ...
-                      </button>
-                    </div>
+                  <div className="column-editor-shell">
                     <RichTextEditor
                       value={item.html}
                       align="left"
                       paragraphGap={10}
                       readOnly={!canEdit}
-                      showToolbar={Boolean(openColumnToolbars[`${block.id}-${index}`])}
                       requireSelectionForToolbarActions
                       onChange={(html) => {
                         const columns = [...block.data.columns]
@@ -406,7 +759,7 @@ export const BlockRenderer = ({
                         onChange({ ...block, data: { ...block.data, columns } })
                       }}
                     />
-                  </>
+                  </div>
                 ) : (
                   <div
                     className="column-richtext rich-text"
@@ -430,29 +783,12 @@ export const BlockRenderer = ({
             {block.data.cards.map((item, index) => (
               <article key={`${block.id}-${index}`} className="card-item">
                 {canEdit ? (
-                  <>
-                    <div className="card-item-header">
-                      <div className="column-item-spacer" />
-                      <button
-                        type="button"
-                        className={`column-tools-toggle ${openCardToolbars[`${block.id}-${index}`] ? 'is-active' : ''}`}
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          setOpenCardToolbars((prev) => ({
-                            ...prev,
-                            [`${block.id}-${index}`]: !prev[`${block.id}-${index}`],
-                          }))
-                        }}
-                      >
-                        ...
-                      </button>
-                    </div>
+                  <div className="card-editor-shell">
                     <RichTextEditor
                       value={getCardHtml(item, index)}
                       align="left"
                       paragraphGap={10}
                       readOnly={!canEdit}
-                      showToolbar={Boolean(openCardToolbars[`${block.id}-${index}`])}
                       requireSelectionForToolbarActions
                       onChange={(html) => {
                         const cards = [...block.data.cards]
@@ -460,7 +796,7 @@ export const BlockRenderer = ({
                         onChange({ ...block, data: { ...block.data, cards } })
                       }}
                     />
-                  </>
+                  </div>
                 ) : (
                   <>
                     <div
@@ -508,39 +844,31 @@ export const BlockRenderer = ({
                 ) : (
                   <div className="image-placeholder">Добавьте изображение</div>
                 )}
-                {block.data.caption && <figcaption>{block.data.caption}</figcaption>}
+                {canEdit ? (
+                  <InlineInput
+                    value={block.data.caption}
+                    className="image-caption-edit"
+                    placeholder="Подпись к изображению"
+                    onChange={(caption) => onChange({ ...block, data: { ...block.data, caption } })}
+                  />
+                ) : (
+                  block.data.caption && <figcaption>{block.data.caption}</figcaption>
+                )}
               </figure>
 
               {hasText ? (
                 <div className="image-copy">
                   {canEdit ? (
-                    <>
-                      <div className="image-copy-header">
-                        <div className="column-item-spacer" />
-                        <button
-                          type="button"
-                          className={`column-tools-toggle ${openImageToolbars[block.id] ? 'is-active' : ''}`}
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            setOpenImageToolbars((prev) => ({
-                              ...prev,
-                              [block.id]: !prev[block.id],
-                            }))
-                          }}
-                        >
-                          ...
-                        </button>
-                      </div>
+                    <div className="image-editor-shell">
                       <RichTextEditor
                         value={block.data.textHtml}
                         align="left"
                         paragraphGap={10}
                         readOnly={!canEdit}
-                        showToolbar={Boolean(openImageToolbars[block.id])}
                         requireSelectionForToolbarActions
                         onChange={(textHtml) => onChange({ ...block, data: { ...block.data, textHtml } })}
                       />
-                    </>
+                    </div>
                   ) : (
                     <div
                       className="image-copy-richtext rich-text"
@@ -582,13 +910,56 @@ export const BlockRenderer = ({
           style={{ marginTop: block.spacing.marginTop, marginBottom: block.spacing.marginBottom }}
           onClick={onSelect}
         >
-          <h3>{block.data.title}</h3>
+          {canEdit ? (
+            <InlineInput
+              value={block.data.title}
+              className="block-title-edit"
+              onChange={(title) => onChange({ ...block, data: { ...block.data, title } })}
+            />
+          ) : (
+            <h3>{block.data.title}</h3>
+          )}
           <div className="stats-grid">
             {block.data.items.map((item, index) => (
               <article key={`${block.id}-${index}`} className="stat-card">
-                <p className="stat-value">{item.value}</p>
-                <p className="stat-label">{item.label}</p>
-                <p className="stat-description">{item.description}</p>
+                {canEdit ? (
+                  <>
+                    <InlineInput
+                      value={item.value}
+                      className="stat-value-edit"
+                      onChange={(value) => {
+                        const items = [...block.data.items]
+                        items[index] = { ...items[index], value }
+                        onChange({ ...block, data: { ...block.data, items } })
+                      }}
+                    />
+                    <InlineInput
+                      value={item.label}
+                      className="stat-label-edit"
+                      onChange={(label) => {
+                        const items = [...block.data.items]
+                        items[index] = { ...items[index], label }
+                        onChange({ ...block, data: { ...block.data, items } })
+                      }}
+                    />
+                    <InlineTextarea
+                      value={item.description}
+                      className="stat-description-edit"
+                      rows={3}
+                      onChange={(description) => {
+                        const items = [...block.data.items]
+                        items[index] = { ...items[index], description }
+                        onChange({ ...block, data: { ...block.data, items } })
+                      }}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <p className="stat-value">{item.value}</p>
+                    <p className="stat-label">{item.label}</p>
+                    <p className="stat-description">{item.description}</p>
+                  </>
+                )}
               </article>
             ))}
           </div>
@@ -596,41 +967,49 @@ export const BlockRenderer = ({
       )
 
     case 'chart': {
+      const chartBlock = block as Extract<ArticleBlock, { type: 'chart' }>
       const max = getChartMax(block.data)
       const hasImportedChartImage = Boolean(block.data.imageSrc)
       const chartAlign = block.data.align || 'left'
       const showValues = block.data.showValues ?? true
+      const hasChartSideText = hasMeaningfulHtml(block.data.textHtml)
       return (
         <section
-          className={`content-block ${selected ? 'is-selected' : ''}`}
+          className={`content-block chart-block-shell ${block.data.frameEnabled === false ? 'chart-frame-off' : ''} ${selected ? 'is-selected' : ''}`}
           style={{ marginTop: block.spacing.marginTop, marginBottom: block.spacing.marginBottom }}
           onClick={onSelect}
         >
           <div className="chart-head">
             {canEdit ? (
-              <>
+              <div className="chart-editor-shell">
                 <div className="chart-text-toolbar-row">
-                  <div className="column-item-spacer" />
-                  <button
-                    type="button"
-                    className={`column-tools-toggle ${openChartToolbars[block.id] ? 'is-active' : ''}`}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      setOpenChartToolbars((prev) => ({
-                        ...prev,
-                        [block.id]: !prev[block.id],
-                      }))
-                    }}
-                  >
-                    ...
-                  </button>
+                  <label className="chart-import-inline">
+                    Импорт файла
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls,.csv,.svg,.png,.jpg,.jpeg,.webp"
+                      onClick={(event) => event.stopPropagation()}
+                      onChange={async (event) => {
+                        const file = event.target.files?.[0]
+                        if (!file) {
+                          return
+                        }
+
+                        try {
+                          await applyImportedChartFile(file, chartBlock, onChange)
+                        } finally {
+                          event.target.value = ''
+                        }
+                      }}
+                    />
+                  </label>
                 </div>
+
                 <RichTextEditor
                   value={getChartCombinedHtml(block.data)}
                   align="left"
                   paragraphGap={8}
                   readOnly={!canEdit}
-                  showToolbar={Boolean(openChartToolbars[block.id])}
                   requireSelectionForToolbarActions
                   onChange={(html) => {
                     const parsed = parseChartTextHtml(html)
@@ -646,7 +1025,7 @@ export const BlockRenderer = ({
                     })
                   }}
                 />
-              </>
+              </div>
             ) : (
               <>
                 <div
@@ -660,15 +1039,94 @@ export const BlockRenderer = ({
               </>
             )}
           </div>
+          {false && (
+            <div className="chart-text-toolbar-row chart-import-toolbar-only">
+              <label className="chart-import-inline">
+                Импорт файла
+                <input
+                  type="file"
+                  accept=".xlsx,.xls,.csv,.svg,.png,.jpg,.jpeg,.webp"
+                  onClick={(event) => event.stopPropagation()}
+                  onChange={async (event) => {
+                    const file = event.target.files?.[0]
+                    if (!file) {
+                      return
+                    }
+
+                    try {
+                      await applyImportedChartFile(file, chartBlock, onChange)
+                    } finally {
+                      event.target.value = ''
+                    }
+                  }}
+                />
+              </label>
+            </div>
+          )}
           {hasImportedChartImage ? (
             <div className={`chart-import-shell chart-import-shell-${chartAlign}`}>
-            <div className="chart-image-wrap">
+              <div
+                className={`chart-image-layout chart-image-side-${block.data.imageTextSide || 'right'} ${hasChartSideText ? 'has-text' : 'no-text'}`}
+              >
+                <div
+                  className="chart-image-wrap"
+                  style={{ width: `${Math.max(30, Math.min(100, block.data.imageWidth || 100))}%` }}
+                >
               <img
                 className="chart-imported-image"
                 src={block.data.imageSrc}
                 alt={block.data.imageAlt || block.data.title || 'Диаграмма'}
               />
             </div>
+                {hasChartSideText ? (
+                  <div className="chart-copy">
+                    {canEdit ? (
+                      <div className="chart-copy-editor-shell">
+                        <RichTextEditor
+                          value={getChartSideTextHtml(block.data)}
+                          align="left"
+                          paragraphGap={10}
+                          readOnly={!canEdit}
+                          requireSelectionForToolbarActions
+                          onChange={(textHtml) =>
+                            onChange({
+                              ...chartBlock,
+                              data: {
+                                ...chartBlock.data,
+                                textHtml,
+                              },
+                            })
+                          }
+                        />
+                      </div>
+                    ) : (
+                      <div
+                        className="chart-copy-richtext rich-text"
+                        dangerouslySetInnerHTML={{ __html: block.data.textHtml || '' }}
+                      />
+                    )}
+                  </div>
+                ) : canEdit ? (
+                  <div className="chart-copy chart-copy-empty">
+                    <button
+                      type="button"
+                      className="settings-action-button"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        onChange({
+                          ...chartBlock,
+                          data: {
+                            ...chartBlock.data,
+                            textHtml: '<p>Новый текст рядом с диаграммой.</p>',
+                          },
+                        })
+                      }}
+                    >
+                      Добавить текст
+                    </button>
+                  </div>
+                ) : null}
+              </div>
             </div>
           ) : (
           <div className={`chart-import-shell chart-import-shell-${chartAlign}`}>
@@ -686,7 +1144,7 @@ export const BlockRenderer = ({
                         onChange={(event) => {
                           const items = [...block.data.items]
                           items[index] = { ...items[index], label: event.target.value }
-                          onChange({ ...block, data: { ...block.data, items } })
+                              onChange({ ...chartBlock, data: { ...chartBlock.data, items } })
                         }}
                       />
                       <div className="chart-line">
@@ -710,9 +1168,9 @@ export const BlockRenderer = ({
                           type="color"
                           value={item.color}
                           onChange={(event) => {
-                            const items = [...block.data.items]
-                            items[index] = { ...items[index], color: event.target.value }
-                            onChange({ ...block, data: { ...block.data, items } })
+                                const items = [...chartBlock.data.items]
+                                items[index] = { ...items[index], color: event.target.value }
+                                onChange({ ...chartBlock, data: { ...chartBlock.data, items } })
                           }}
                         />
                       </div>
@@ -722,9 +1180,9 @@ export const BlockRenderer = ({
                         value={item.value}
                         onClick={(event) => event.stopPropagation()}
                         onChange={(event) => {
-                          const items = [...block.data.items]
-                          items[index] = { ...items[index], value: Number(event.target.value) || 0 }
-                          onChange({ ...block, data: { ...block.data, items } })
+                              const items = [...chartBlock.data.items]
+                              items[index] = { ...items[index], value: Number(event.target.value) || 0 }
+                              onChange({ ...chartBlock, data: { ...chartBlock.data, items } })
                         }}
                       />
                     </>
