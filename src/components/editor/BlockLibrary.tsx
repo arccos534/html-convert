@@ -1,64 +1,91 @@
-﻿import type { BlockTemplate, BlockType } from '../../types'
+import { useState } from 'react'
+import { blockNames, blockTemplates } from '../../data/blockFactory'
+import type { ArticleBlock, BlockType } from '../../types'
 
-interface BlockLibraryProps {
-  templates: BlockTemplate[]
-  onAddBlock: (type: BlockType) => void
+const groups: { name: string; types: BlockType[] }[] = [
+  { name: 'Основные', types: ['hero', 'newsIntro', 'richText', 'image', 'quote'] },
+  { name: 'Композиция', types: ['columns', 'cards', 'background', 'divider', 'button'] },
+  { name: 'Акценты', types: ['important', 'callout'] },
+  { name: 'Данные', types: ['table', 'stats', 'chart'] },
+]
+
+const glyphs: Record<BlockType, string> = {
+  hero: 'H', newsIntro: '▤', richText: '¶', image: '▧', quote: '“',
+  columns: '◫', cards: '▦', background: '▣', divider: '—', button: '↗',
+  important: '!', callout: 'i', table: '⊞', stats: '#', chart: '▥',
 }
 
-export const BlockLibrary = ({ templates, onAddBlock }: BlockLibraryProps) => {
-  const categoryLabels: Record<string, string> = {
-    Templates: 'Шаблоны',
-    Text: 'Текст',
-    Other: 'Другое',
-    Media: 'Медиа',
-    Data: 'Данные',
-  }
-  const categoryOrder = ['Templates', 'Text', 'Media', 'Other', 'Data']
-  const normalizeCategory = (category: string) =>
-    category === 'Highlights' || category === 'Layout' ? 'Other' : category
+interface BlockLibraryProps {
+  blocks: ArticleBlock[]
+  selectedBlockId: string | null
+  showOutline: boolean
+  onChangeSection: (outline: boolean) => void
+  onAddBlock: (type: BlockType) => void
+  onJumpToBlock: (id: string) => void
+}
 
-  const grouped = templates.reduce<Record<string, BlockTemplate[]>>((acc, template) => {
-    const normalizedCategory = normalizeCategory(template.category)
-    if (!acc[normalizedCategory]) {
-      acc[normalizedCategory] = []
-    }
-    acc[normalizedCategory].push(template)
-    return acc
-  }, {})
-
-  const orderedGroups = [
-    ...categoryOrder.filter((category) => grouped[category]),
-    ...Object.keys(grouped).filter((category) => !categoryOrder.includes(category)),
-  ]
+export const BlockLibrary = ({ blocks, selectedBlockId, showOutline, onChangeSection, onAddBlock, onJumpToBlock }: BlockLibraryProps) => {
+  const [query, setQuery] = useState('')
+  const normalizedQuery = query.trim().toLocaleLowerCase('ru').replaceAll('ё', 'е')
+  const visibleTemplates = blockTemplates.filter((item) =>
+    `${item.name} ${item.description}`.toLocaleLowerCase('ru').replaceAll('ё', 'е').includes(normalizedQuery),
+  )
 
   return (
-    <aside className="panel panel-left">
+    <aside className="panel panel-left" aria-label="Библиотека и структура статьи">
       <div className="panel-header">
-        <h2>Библиотека блоков</h2>
-        <p>Добавляйте секции как в конструкторе Tilda</p>
+        <h2>Библиотека</h2>
+        <div className="segmented panel-switch" role="group" aria-label="Библиотека и структура">
+          <button type="button" aria-pressed={!showOutline} onClick={() => onChangeSection(false)}>Блоки</button>
+          <button type="button" aria-pressed={showOutline} onClick={() => onChangeSection(true)}>Структура</button>
+        </div>
       </div>
 
-      <div className="library-groups">
-        {orderedGroups.map((category) => (
-          <section key={category} className="library-group">
-            <h3>{categoryLabels[category] ?? category}</h3>
-            <div className="library-grid">
-              {grouped[category].map((item) => (
-                <button
-                  key={`${category}-${item.type}`}
-                  type="button"
-                  className="library-card"
-                  onClick={() => onAddBlock(item.type)}
-                >
-                  <strong>{item.name}</strong>
-                  <span>{item.description}</span>
+      {showOutline ? (
+        blocks.length > 0 ? (
+          <ol className="library-outline">
+            {blocks.map((block, index) => (
+              <li key={block.id}>
+                <button type="button" className="library-card outline-card" aria-current={selectedBlockId === block.id ? 'true' : undefined} onClick={() => onJumpToBlock(block.id)}>
+                  <span className="outline-index" aria-hidden="true">{index + 1}</span>
+                  <strong>{blockNames[block.type]}</strong>
+                  <span className="library-add" aria-hidden="true">↗</span>
                 </button>
-              ))}
+              </li>
+            ))}
+          </ol>
+        ) : <p className="library-empty">В статье пока нет блоков.</p>
+      ) : (
+        <>
+          <label className="library-search">
+            <span className="ui-icon icon-search" aria-hidden="true" />
+            <input type="search" placeholder="Найти блок" aria-label="Найти блок" value={query} onChange={(event) => setQuery(event.target.value)} />
+          </label>
+          {visibleTemplates.length === 0 ? <p className="library-empty" role="status">Блоки не найдены.</p> : (
+            <div className="library-groups">
+              {groups.map(({ name, types }) => {
+                const items = types.flatMap((type) => visibleTemplates.filter((item) => item.type === type))
+                if (items.length === 0) return null
+
+                return (
+                  <section key={name} className="library-group">
+                    <h3>{name}</h3>
+                    <div className="library-grid">
+                      {items.map((item) => (
+                        <button key={item.type} type="button" className="library-card" title={item.description} onClick={() => onAddBlock(item.type)}>
+                          <span className="library-glyph" aria-hidden="true">{glyphs[item.type]}</span>
+                          <strong>{item.name}</strong>
+                          <span className="library-add" aria-hidden="true">+</span>
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                )
+              })}
             </div>
-          </section>
-        ))}
-      </div>
+          )}
+        </>
+      )}
     </aside>
   )
 }
-

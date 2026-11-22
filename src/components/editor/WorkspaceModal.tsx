@@ -1,9 +1,12 @@
 import type { SavedWorkspace } from '../../lib/localAccounts'
+import { Modal } from './Modal'
 
 interface WorkspaceModalProps {
-  open: boolean
+  saving: boolean
+  feedback: { message: string; error: boolean } | null
   workspaces: SavedWorkspace[]
   onClose: () => void
+  onSave: () => void
   onLoad: (workspace: SavedWorkspace) => void
   onDelete: (workspaceId: string) => void
 }
@@ -21,35 +24,41 @@ const formatDate = (value: string) => {
 }
 
 export const WorkspaceModal = ({
-  open,
+  saving,
+  feedback,
   workspaces,
   onClose,
+  onSave,
   onLoad,
   onDelete,
 }: WorkspaceModalProps) => {
-  if (!open) {
-    return null
-  }
-
   return (
-    <div className="modal-overlay" role="dialog" aria-modal="true">
+    <Modal titleId="workspace-title" className="workspace-modal" onClose={onClose}>
       <div className="modal-card workspace-modal-card">
         <header>
           <div className="modal-title-group">
-            <h3>Мои работы</h3>
-            <p>Сохранённые версии текущего аккаунта доступны после входа с любого устройства.</p>
+            <h2 id="workspace-title">Мои работы</h2>
+            <p>Сохраняйте статьи здесь, чтобы возвращаться к ним из аккаунта.</p>
           </div>
           <div className="modal-actions">
-            <button type="button" onClick={onClose}>
-              Закрыть
+            <button className="ui-button icon-button" type="button" aria-label="Закрыть" disabled={saving} onClick={onClose}>
+              ×
             </button>
           </div>
         </header>
 
         <div className="workspace-modal-body">
+          <button className="ui-button primary" type="button" disabled={saving} onClick={onSave}>
+            {saving ? 'Сохранение…' : 'Сохранить текущую статью'}
+          </button>
+          {feedback && (
+            <p className={feedback.error ? 'auth-error' : 'workspace-feedback'} role={feedback.error ? 'alert' : 'status'}>
+              {feedback.message}
+            </p>
+          )}
           {workspaces.length === 0 ? (
             <div className="empty-state workspace-empty-state">
-              <p>Сохранённых работ пока нет. Нажмите «Сохранить», чтобы создать первую.</p>
+              <p>Сохранённых работ пока нет.</p>
             </div>
           ) : (
             <div className="workspace-list">
@@ -60,10 +69,12 @@ export const WorkspaceModal = ({
                     <span>{formatDate(workspace.updatedAt)}</span>
                   </div>
                   <div className="workspace-item-actions">
-                    <button type="button" onClick={() => onLoad(workspace)}>
+                    <button className="ui-button" type="button" disabled={saving} onClick={() => onLoad(workspace)}>
                       Открыть
                     </button>
-                    <button type="button" onClick={() => onDelete(workspace.id)}>
+                    <button className="ui-button" type="button" disabled={saving} onClick={() => {
+                      if (window.confirm(`Удалить «${workspace.title}» из сохранённых работ?`)) onDelete(workspace.id)
+                    }}>
                       Удалить
                     </button>
                   </div>
@@ -73,6 +84,6 @@ export const WorkspaceModal = ({
           )}
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }

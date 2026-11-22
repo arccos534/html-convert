@@ -1,16 +1,18 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import { RichTextToolbarProvider } from './components/blocks/RichTextToolbarContext'
 import { AuthModal } from './components/editor/AuthModal'
 import { BlockLibrary } from './components/editor/BlockLibrary'
 import { EditorCanvas } from './components/editor/EditorCanvas'
+import { GlobalRichTextToolbar } from './components/editor/GlobalRichTextToolbar'
 import { LivePreview } from './components/editor/LivePreview'
+import { Modal } from './components/editor/Modal'
 import { SettingsPanel } from './components/editor/SettingsPanel'
 import { TopBar } from './components/editor/TopBar'
 import { WorkspaceModal } from './components/editor/WorkspaceModal'
-import { blockTemplates, createBlock } from './data/blockFactory'
+import { blockNames, createBlock } from './data/blockFactory'
 import { createDemoDocument } from './data/demoArticle'
-import { copyToClipboard, downloadTextFile, loadDraftFromStorage, readFileAsText } from './lib/documentIO'
+import { copyToClipboard, downloadTextFile, loadDraftFromStorage, readFileAsText, saveDraftToStorage } from './lib/documentIO'
 import { importChartFile } from './lib/chartImport'
 import { generateStandaloneHtml } from './lib/exportHtml'
 import {
@@ -33,6 +35,7 @@ import { normalizeColumnsData } from './lib/columns'
 import { createDefaultHeroBackground } from './lib/heroBackground'
 import type { ArticleBlock, ArticleDocument, ArticleSettings, BlockType } from './types'
 import './App.css'
+import './EditorWorkspace.css'
 
 interface EditorSnapshot {
   documentData: ArticleDocument
@@ -40,6 +43,15 @@ interface EditorSnapshot {
 }
 
 const HISTORY_LIMIT = 80
+const compactLayout = window.matchMedia('(max-width: 1000px)')
+const subscribeToLayout = (onChange: () => void) => {
+  compactLayout.addEventListener('change', onChange)
+  return () => compactLayout.removeEventListener('change', onChange)
+}
+const getCompactLayout = () => compactLayout.matches
+const pluralRules = new Intl.PluralRules('ru')
+const blockCountLabel = (count: number) =>
+  `${count} ${{ one: 'блок', few: 'блока', many: 'блоков', other: 'блока', zero: 'блоков', two: 'блока' }[pluralRules.select(count)]}`
 
 const normalizeDocument = (value: unknown): ArticleDocument | null => {
   if (!value || typeof value !== 'object') {
@@ -137,11 +149,19 @@ const normalizeDocument = (value: unknown): ArticleDocument | null => {
 const slugify = (value: string) =>
   value
     .toLowerCase()
-    .replace(/[^a-zа-я0-9]+/gi, '-')
+    .replace(/[^a-zа-яё0-9]+/gi, '-')
     .replace(/(^-|-$)/g, '') || 'article'
 
+const getGuestDocument = () => {
+  try {
+    return normalizeDocument(loadDraftFromStorage()) ?? createDemoDocument()
+  } catch {
+    return createDemoDocument()
+  }
+}
+
 function App() {
-  const [documentData, setDocumentData] = useState<ArticleDocument>(() => createDemoDocument())
+  const [documentData, setDocumentData] = useState<ArticleDocument>(getGuestDocument)
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(
     documentData.blocks[0]?.id ?? null,
   )
@@ -150,8 +170,18 @@ function App() {
   const [savedWorkspaces, setSavedWorkspaces] = useState<SavedWorkspace[]>([])
   const [theme, setTheme] = useState<ThemeMode>(() => loadThemePreference())
   const [authReady, setAuthReady] = useState(false)
+  const [authModalOpen, setAuthModalOpen] = useState(false)
   const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false)
+  const [workspaceSaving, setWorkspaceSaving] = useState(false)
+  const [workspaceFeedback, setWorkspaceFeedback] = useState<{ message: string; error: boolean } | null>(null)
   const [previewMode, setPreviewMode] = useState(false)
+  const [showPageSettings, setShowPageSettings] = useState(false)
+  const [showOutline, setShowOutline] = useState(false)
+  const [drawer, setDrawer] = useState<'library' | 'settings' | null>(null)
+  const compact = useSyncExternalStore(subscribeToLayout, getCompactLayout)
+  const editorScroll = useRef<HTMLDivElement>(null)
+  const savedScrollPosition = useRef(0)
+  const pendingScrollTarget = useRef<string | null>(null)
   const [savedDocument, setSavedDocument] = useState<ArticleDocument | null>(null)
   const [failedDocument, setFailedDocument] = useState<ArticleDocument | null>(null)
   const [retrySave, setRetrySave] = useState(0)
@@ -160,8 +190,6 @@ function App() {
   const [notice, setNotice] = useState('')
   const [history, setHistory] = useState<EditorSnapshot[]>([])
   const [future, setFuture] = useState<EditorSnapshot[]>([])
-
-  const exportedHtml = useMemo(() => generateStandaloneHtml(documentData), [documentData])
 
   const selectedBlock = useMemo(
     () => documentData.blocks.find((block) => block.id === selectedBlockId) ?? null,
@@ -192,14 +220,7 @@ function App() {
           return
         }
 
-        if (!sessionUser) {
-          const demo = createDemoDocument()
-          setCurrentUser(null)
-          setSavedWorkspaces([])
-          setDocumentData(demo)
-          setSelectedBlockId(demo.blocks[0]?.id ?? null)
-          return
-        }
+        if (!sessionUser) return
 
         const legacyDraft = loadDraftFromStorage()
         const [autosave, workspaces] = await Promise.all([
@@ -216,17 +237,13 @@ function App() {
         setSavedWorkspaces(workspaces)
         setDocumentData(nextDocument)
         setSelectedBlockId(nextDocument.blocks[0]?.id ?? null)
+        setSavedDocument(autosave)
       } catch {
         if (cancelled) {
           return
         }
 
-        setNotice('Не удалось загрузить черновик с сервера. Войдите повторно.')
-        const demo = createDemoDocument()
-        setCurrentUser(null)
-        setSavedWorkspaces([])
-        setDocumentData(demo)
-        setSelectedBlockId(demo.blocks[0]?.id ?? null)
+        setNotice('Работы из аккаунта сейчас недоступны.')
       } finally {
         if (!cancelled) {
           setAuthReady(true)
@@ -242,34 +259,46 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (!authReady || !currentUser) {
-      return
-    }
+    if (!authReady || savedDocument === documentData) return
 
     const timer = window.setTimeout(() => {
-      saveQueue.current = saveQueue.current.then(async () => {
+      const save = async () => {
         try {
-          await saveUserAutosave(documentData)
+          if (currentUser) await saveUserAutosave(documentData)
+          else saveDraftToStorage(documentData)
           setSavedDocument(documentData)
           setFailedDocument(null)
         } catch {
           setFailedDocument(documentData)
         }
-      })
+      }
+      if (currentUser) saveQueue.current = saveQueue.current.then(save)
+      else void save()
     }, 500)
 
     return () => window.clearTimeout(timer)
-  }, [authReady, currentUser, documentData, retrySave])
+  }, [authReady, currentUser, documentData, retrySave, savedDocument])
 
   useEffect(() => {
-    if (!currentUser || savedDocument === documentData) return
+    if (!authReady || savedDocument === documentData) return
     const warn = (event: BeforeUnloadEvent) => {
       event.preventDefault()
       event.returnValue = true
     }
     window.addEventListener('beforeunload', warn)
     return () => window.removeEventListener('beforeunload', warn)
-  }, [currentUser, documentData, savedDocument])
+  }, [authReady, documentData, savedDocument])
+
+  useLayoutEffect(() => {
+    if (editorScroll.current) editorScroll.current.scrollTop = savedScrollPosition.current
+  }, [previewMode])
+
+  useLayoutEffect(() => {
+    const id = pendingScrollTarget.current
+    if (!id || previewMode) return
+    document.getElementById(`block-${id}`)?.scrollIntoView({ block: 'nearest' })
+    pendingScrollTarget.current = null
+  })
 
   const commitDocument = (
     nextDocumentData: ArticleDocument,
@@ -289,6 +318,9 @@ function App() {
 
   const replaceDocument = (nextDocumentData: ArticleDocument, nextSelectedBlockId: string | null) => {
     pendingChartImports.current.clear()
+    setShowPageSettings(false)
+    savedScrollPosition.current = 0
+    editorScroll.current?.scrollTo(0, 0)
     setDocumentData(nextDocumentData)
     setSelectedBlockId(nextSelectedBlockId)
     setHistory([])
@@ -363,15 +395,23 @@ function App() {
 
   const addBlock = (type: BlockType) => {
     const block = createBlock(type)
-    commitDocument({ ...documentData, blocks: [...documentData.blocks, block] }, block.id)
-    setNotice(`Добавлен блок: ${type}`)
+    const blocks = [...documentData.blocks]
+    const index = blocks.findIndex((item) => item.id === selectedBlockId)
+    blocks.splice(index < 0 ? blocks.length : index + 1, 0, block)
+    pendingScrollTarget.current = block.id
+    setDrawer(null)
+    setShowPageSettings(false)
+    commitDocument({ ...documentData, blocks }, block.id)
+    setNotice(`Добавлен блок «${blockNames[type]}»`)
   }
 
   const deleteBlock = (id: string) => {
+    const index = documentData.blocks.findIndex((block) => block.id === id)
     const blocks = documentData.blocks.filter((block) => block.id !== id)
-    const nextSelectedBlockId = selectedBlockId === id ? blocks[0]?.id ?? null : selectedBlockId
+    const nextSelectedBlockId = selectedBlockId === id ? (blocks[index] ?? blocks[index - 1])?.id ?? null : selectedBlockId
 
     commitDocument({ ...documentData, blocks }, nextSelectedBlockId)
+    setNotice('Блок удалён. Отменить можно на верхней панели.')
   }
 
   const duplicateBlock = (id: string) => {
@@ -386,7 +426,10 @@ function App() {
 
     const blocks = [...documentData.blocks]
     blocks.splice(index + 1, 0, duplicate)
+    pendingScrollTarget.current = duplicate.id
+    setShowPageSettings(false)
     commitDocument({ ...documentData, blocks }, duplicate.id)
+    setNotice('Копия блока добавлена')
   }
 
   const refreshWorkspaces = async () => {
@@ -399,21 +442,28 @@ function App() {
     setSavedWorkspaces(workspaces)
   }
 
-  const saveDraft = async () => {
+  const downloadDraft = () => {
     downloadTextFile(
       `${slugify(documentData.title)}.json`,
       JSON.stringify(documentData, null, 2),
       'application/json',
     )
+    setNotice('Черновик JSON скачан')
+  }
+
+  const saveWorkspace = async () => {
+    if (workspaceSaving) return
+    setWorkspaceSaving(true)
+    setWorkspaceFeedback(null)
     try {
-      if (currentUser) {
-        const nextWorkspaceId = await saveWorkspaceSnapshot(documentData, currentWorkspaceId)
-        setCurrentWorkspaceId(nextWorkspaceId)
-        await refreshWorkspaces()
-      }
-      setNotice(currentUser ? 'Работа сохранена, JSON скачан' : 'JSON-файл скачан')
+      const nextWorkspaceId = await saveWorkspaceSnapshot(documentData, currentWorkspaceId)
+      setCurrentWorkspaceId(nextWorkspaceId)
+      await refreshWorkspaces()
+      setWorkspaceFeedback({ message: 'Статья сохранена в «Моих работах».', error: false })
     } catch {
-      setNotice('Не удалось сохранить работу на сервере. Копия в JSON скачана.')
+      setWorkspaceFeedback({ message: 'Не удалось сохранить работу. Попробуйте ещё раз.', error: true })
+    } finally {
+      setWorkspaceSaving(false)
     }
   }
 
@@ -429,6 +479,7 @@ function App() {
 
       replaceDocument(parsed, parsed.blocks[0]?.id ?? null)
       setCurrentWorkspaceId(null)
+      setPreviewMode(false)
       setNotice('JSON-черновик успешно импортирован')
     } catch {
       setNotice('Не удалось прочитать JSON-черновик')
@@ -437,7 +488,7 @@ function App() {
 
   const copyHtml = async () => {
     try {
-      await copyToClipboard(exportedHtml)
+      await copyToClipboard(generateStandaloneHtml(documentData))
       setNotice('HTML скопирован в буфер обмена')
     } catch {
       setNotice('Не удалось скопировать HTML')
@@ -445,7 +496,7 @@ function App() {
   }
 
   const downloadHtml = () => {
-    downloadTextFile(`${slugify(documentData.title)}.html`, exportedHtml, 'text/html')
+    downloadTextFile(`${slugify(documentData.title)}.html`, generateStandaloneHtml(documentData), 'text/html')
     setNotice('HTML-файл скачан')
   }
 
@@ -456,22 +507,20 @@ function App() {
       loadSavedWorkspaces().catch(() => []),
     ])
 
-    const nextDocument = autosave ?? createDemoDocument()
     setCurrentUser(account)
     setSavedWorkspaces(workspaces)
-    replaceDocument(nextDocument, nextDocument.blocks[0]?.id ?? null)
+    if (autosave) replaceDocument(autosave, autosave.blocks[0]?.id ?? null)
+    setSavedDocument(autosave)
     setCurrentWorkspaceId(null)
     setNotice(`С возвращением, ${account.username}`)
   }
 
   const handleRegister = async (username: string, password: string) => {
     const account = await registerAccount(username, password)
-    const legacyDraft = loadDraftFromStorage()
-    const nextDocument = legacyDraft ?? createDemoDocument()
 
     setCurrentUser(account)
     setSavedWorkspaces([])
-    replaceDocument(nextDocument, nextDocument.blocks[0]?.id ?? null)
+    setSavedDocument(null)
     setCurrentWorkspaceId(null)
     setNotice(`Аккаунт ${account.username} создан`)
   }
@@ -491,31 +540,99 @@ function App() {
     setCurrentUser(null)
     setSavedWorkspaces([])
     setCurrentWorkspaceId(null)
-    const demo = createDemoDocument()
-    replaceDocument(demo, demo.blocks[0]?.id ?? null)
+    const guestDocument = getGuestDocument()
+    replaceDocument(guestDocument, guestDocument.blocks[0]?.id ?? null)
     setPreviewMode(false)
     setNotice('Вы вышли из аккаунта')
   }
 
-  const handleLoadWorkspace = async (workspace: SavedWorkspace) => {
+  const handleLoadWorkspace = (workspace: SavedWorkspace) => {
     replaceDocument(workspace.document, workspace.document.blocks[0]?.id ?? null)
     setCurrentWorkspaceId(workspace.id)
     setWorkspaceModalOpen(false)
+    setPreviewMode(false)
     setNotice(`Открыта работа: ${workspace.title}`)
   }
 
   const handleDeleteWorkspace = async (workspaceId: string) => {
-    if (!currentUser) {
-      return
+    if (workspaceSaving) return
+    setWorkspaceSaving(true)
+    setWorkspaceFeedback(null)
+    try {
+      await deleteWorkspaceSnapshot(workspaceId)
+      if (currentWorkspaceId === workspaceId) setCurrentWorkspaceId(null)
+      await refreshWorkspaces()
+      setWorkspaceFeedback({ message: 'Работа удалена.', error: false })
+    } catch {
+      setWorkspaceFeedback({ message: 'Не удалось удалить работу. Попробуйте ещё раз.', error: true })
+    } finally {
+      setWorkspaceSaving(false)
     }
-
-    await deleteWorkspaceSnapshot(workspaceId)
-    if (currentWorkspaceId === workspaceId) {
-      setCurrentWorkspaceId(null)
-    }
-    await refreshWorkspaces()
-    setNotice('Работа удалена')
   }
+
+  const selectBlock = (id: string) => {
+    setSelectedBlockId(id)
+    setShowPageSettings(false)
+  }
+
+  const changeMode = (preview: boolean) => {
+    if (preview === previewMode) return
+    if (preview) savedScrollPosition.current = editorScroll.current?.scrollTop ?? 0
+    setDrawer(null)
+    setPreviewMode(preview)
+  }
+
+  const openLibrary = () => {
+    const lastBlock = documentData.blocks.at(-1)
+    if (lastBlock) selectBlock(lastBlock.id)
+    setShowOutline(false)
+    if (compact) {
+      setDrawer('library')
+    } else {
+      requestAnimationFrame(() => document.querySelector<HTMLInputElement>('.library-search input')?.focus())
+    }
+  }
+
+  const startArticle = (example: boolean) => {
+    const prompt = example ? 'Открыть пример вместо текущей статьи?' : 'Начать новую статью вместо текущей?'
+    if (documentData.blocks.length > 0 && !window.confirm(prompt)) return
+
+    const demo = createDemoDocument()
+    const next = example ? demo : { ...demo, title: 'Новая статья', blocks: [] }
+    pendingChartImports.current.clear()
+    commitDocument(next, next.blocks[0]?.id ?? null)
+    setCurrentWorkspaceId(null)
+    setShowPageSettings(false)
+    savedScrollPosition.current = 0
+    editorScroll.current?.scrollTo(0, 0)
+    setPreviewMode(false)
+  }
+
+  const library = (
+    <BlockLibrary
+      blocks={documentData.blocks}
+      selectedBlockId={selectedBlockId}
+      showOutline={showOutline}
+      onChangeSection={setShowOutline}
+      onAddBlock={addBlock}
+      onJumpToBlock={(id) => {
+        selectBlock(id)
+        setDrawer(null)
+        document.getElementById(`block-${id}`)?.scrollIntoView({ block: 'start' })
+      }}
+    />
+  )
+  const inspector = (
+    <SettingsPanel
+      block={selectedBlock}
+      showPageSettings={showPageSettings}
+      settings={documentData.settings}
+      onUpdateBlock={updateBlock}
+      onImportChart={importChart}
+      onUpdateSettings={(settings) => commitDocument({ ...documentData, settings })}
+      onChangeScope={setShowPageSettings}
+    />
+  )
 
   return (
     <RichTextToolbarProvider>
@@ -535,69 +652,94 @@ function App() {
           onTitleChange={(title) => commitDocument({ ...documentData, title })}
           onUndo={undo}
           onRedo={redo}
-          onSaveDraft={() => void saveDraft()}
+          onDownloadDraft={downloadDraft}
           onLoadDraftFile={(file) => void loadDraftFile(file)}
-          onTogglePreview={() => setPreviewMode((value) => !value)}
+          onChangeMode={changeMode}
           onCopyHtml={() => void copyHtml()}
           onDownloadHtml={downloadHtml}
-          onOpenWorkspaces={() => setWorkspaceModalOpen(true)}
+          onOpenAccount={() => {
+            if (currentUser) {
+              setWorkspaceFeedback(null)
+              setWorkspaceModalOpen(true)
+            } else if (authReady) {
+              setAuthModalOpen(true)
+            }
+          }}
           onToggleTheme={() => setTheme((value) => (value === 'dark' ? 'light' : 'dark'))}
           onLogout={() => void handleLogout()}
-          onResetDemo={() => {
-            const demo = createDemoDocument()
-            replaceDocument(demo, demo.blocks[0]?.id ?? null)
-            setCurrentWorkspaceId(null)
-            setNotice('Загружена демо-страница')
-          }}
+          onOpenExample={() => startArticle(true)}
+          onNewArticle={() => startArticle(false)}
         />
 
         <div className={`workspace ${previewMode ? 'workspace-preview' : ''}`}>
-          {!previewMode && <BlockLibrary templates={blockTemplates} onAddBlock={addBlock} />}
+          {!previewMode && !compact && library}
 
           <main className={`editor-main ${previewMode ? 'editor-main-preview' : ''}`}>
             {previewMode ? (
-              <LivePreview documentData={documentData} />
+              <LivePreview documentData={documentData} compact={compact} />
             ) : (
-              <EditorCanvas
-                blocks={documentData.blocks}
-                selectedBlockId={selectedBlockId}
-                editable={!previewMode}
-                onSelectBlock={setSelectedBlockId}
-                onChangeBlock={updateBlock}
-                onImportChart={importChart}
-                onDeleteBlock={deleteBlock}
-                onDuplicateBlock={duplicateBlock}
-                onReorderBlocks={(blocks) => commitDocument({ ...documentData, blocks })}
-              />
+              <>
+                <div className="canvas-head">
+                  <div className="canvas-heading">
+                    <h1>Холст статьи</h1>
+                    <span>{blockCountLabel(documentData.blocks.length)}</span>
+                  </div>
+                  {compact && (
+                    <div className="canvas-panel-actions">
+                      <button type="button" className="ui-button" aria-haspopup="dialog" onClick={() => setDrawer('library')}>Библиотека</button>
+                      <button type="button" className="ui-button" aria-haspopup="dialog" onClick={() => setDrawer('settings')}>Параметры</button>
+                    </div>
+                  )}
+                </div>
+                <GlobalRichTextToolbar />
+                <div className="editor-scroll" ref={editorScroll}>
+                  <EditorCanvas
+                    blocks={documentData.blocks}
+                    selectedBlockId={selectedBlockId}
+                    editable
+                    onSelectBlock={selectBlock}
+                    onChangeBlock={updateBlock}
+                    onImportChart={importChart}
+                    onDeleteBlock={deleteBlock}
+                    onDuplicateBlock={duplicateBlock}
+                    onReorderBlocks={(blocks) => commitDocument({ ...documentData, blocks })}
+                  />
+                  <div className="editor-tail">
+                    <button type="button" className="ui-button" onClick={openLibrary}>{documentData.blocks.length ? 'Добавить блок' : 'Выбрать первый блок'}</button>
+                  </div>
+                </div>
+              </>
             )}
           </main>
 
-          {!previewMode && (
-            <SettingsPanel
-              block={selectedBlock}
-              settings={documentData.settings}
-              onUpdateBlock={updateBlock}
-              onImportChart={importChart}
-              onUpdateSettings={(settings) => commitDocument({ ...documentData, settings })}
-            />
-          )}
+          {!previewMode && !compact && inspector}
         </div>
 
+        {!previewMode && compact && drawer && (
+          <Modal titleId="drawer-title" className="editor-drawer" onClose={() => setDrawer(null)}>
+            <div className="drawer-body">
+              <div className="drawer-header">
+                <h2 id="drawer-title">{drawer === 'library' ? 'Библиотека' : 'Параметры'}</h2>
+                <button type="button" className="ui-button icon-button" aria-label="Закрыть" onClick={() => setDrawer(null)}>×</button>
+              </div>
+              {drawer === 'library' ? library : inspector}
+            </div>
+          </Modal>
+        )}
         {notice && <div className="notice" role="status">{notice}</div>}
 
-        <AuthModal
-          open={authReady && !currentUser}
-          onLogin={handleLogin}
-          onRegister={handleRegister}
-        />
-
-        <WorkspaceModal
-          open={workspaceModalOpen}
-          workspaces={savedWorkspaces}
-          onClose={() => setWorkspaceModalOpen(false)}
-          onLoad={(workspace) => void handleLoadWorkspace(workspace)}
-          onDelete={(workspaceId) => void handleDeleteWorkspace(workspaceId)}
-        />
+        {authModalOpen && <AuthModal onClose={() => setAuthModalOpen(false)} onLogin={handleLogin} onRegister={handleRegister} />}
+        {workspaceModalOpen && (
+          <WorkspaceModal
+            saving={workspaceSaving}
+            feedback={workspaceFeedback}
+            workspaces={savedWorkspaces}
+            onClose={() => { if (!workspaceSaving) setWorkspaceModalOpen(false) }}
+            onSave={() => void saveWorkspace()}
+            onLoad={handleLoadWorkspace}
+            onDelete={(workspaceId) => void handleDeleteWorkspace(workspaceId)}
+          />
+        )}
       </div>
     </RichTextToolbarProvider>
   )

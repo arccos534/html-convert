@@ -1,20 +1,39 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ArticleDocument } from '../../types'
 import { generateSiteArticlePreviewHtml, generateSiteFeedPreviewHtml } from '../../lib/sitePreview'
 
 interface LivePreviewProps {
   documentData: ArticleDocument
+  compact: boolean
 }
 
-export const LivePreview = ({ documentData }: LivePreviewProps) => {
-  const [screen, setScreen] = useState<'feed' | 'article'>('feed')
-  const [width, setWidth] = useState<'desktop' | 'mobile'>('desktop')
+const DESKTOP_WIDTH = 1024
+
+export const LivePreview = ({ documentData, compact }: LivePreviewProps) => {
+  const [screen, setScreen] = useState<'feed' | 'article'>('article')
+  const [width, setWidth] = useState<'desktop' | 'mobile'>(compact ? 'mobile' : 'desktop')
+  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 })
+  const viewportRef = useRef<HTMLDivElement>(null)
   const focusAfterNavigation = useRef(false)
   const frameRef = useRef<HTMLIFrameElement>(null)
   const lastPage = useRef<{ document: Document; html: string } | null>(null)
   const previewHtml = useMemo(() => screen === 'feed'
     ? generateSiteFeedPreviewHtml(documentData)
     : generateSiteArticlePreviewHtml(documentData), [documentData, screen])
+
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current
+    if (!viewport) return
+    const observer = new ResizeObserver(([{ contentRect }]) => {
+      setViewportSize({ width: contentRect.width, height: contentRect.height })
+    })
+    observer.observe(viewport)
+    return () => observer.disconnect()
+  }, [])
+
+  const scale = width === 'desktop' && viewportSize.width > 0
+    ? Math.min(1, viewportSize.width / DESKTOP_WIDTH)
+    : 1
 
   useEffect(() => {
     const frame = frameRef.current
@@ -59,22 +78,21 @@ export const LivePreview = ({ documentData }: LivePreviewProps) => {
   }, [previewHtml, screen])
 
   return (
-    <section className="live-preview live-preview-full">
+    <section className="live-preview" aria-labelledby="preview-title">
       <header className="live-preview-header">
-        <div>
-          <h2>Предпросмотр сайта</h2>
-          <p>{screen === 'feed' ? 'Лента новостей' : 'Полная новость'}</p>
-        </div>
-        <div className="preview-switches" role="group" aria-label="Ширина предпросмотра">
-          <button type="button" aria-pressed={width === 'desktop'} className={width === 'desktop' ? 'is-active' : ''} onClick={() => setWidth('desktop')}>
-            Компьютер
-          </button>
-          <button type="button" aria-pressed={width === 'mobile'} className={width === 'mobile' ? 'is-active' : ''} onClick={() => setWidth('mobile')}>
-            Телефон
-          </button>
+        <h1 id="preview-title">Предпросмотр сайта</h1>
+        <div className="preview-switches">
+          <div className="segmented" role="group" aria-label="Страница предпросмотра">
+            <button type="button" aria-pressed={screen === 'article'} onClick={() => setScreen('article')}>Статья</button>
+            <button type="button" aria-pressed={screen === 'feed'} onClick={() => setScreen('feed')}>Лента</button>
+          </div>
+          <div className="segmented" role="group" aria-label="Ширина предпросмотра">
+            <button type="button" aria-pressed={width === 'desktop'} onClick={() => setWidth('desktop')}>Компьютер</button>
+            <button type="button" aria-pressed={width === 'mobile'} onClick={() => setWidth('mobile')}>Телефон</button>
+          </div>
         </div>
       </header>
-      <div className={width === 'mobile' ? 'preview-mobile' : undefined}>
+      <div className={`preview-viewport ${width === 'mobile' ? 'preview-mobile' : ''}`} ref={viewportRef}>
         <iframe
           key={screen}
           className="portal-preview-frame"
@@ -82,6 +100,13 @@ export const LivePreview = ({ documentData }: LivePreviewProps) => {
           srcDoc={previewHtml}
           sandbox="allow-same-origin"
           ref={frameRef}
+          style={scale < 1 ? {
+            width: DESKTOP_WIDTH,
+            height: viewportSize.height / scale,
+            flexShrink: 0,
+            transform: `scale(${scale})`,
+            transformOrigin: 'top left',
+          } : undefined}
         />
       </div>
     </section>

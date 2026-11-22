@@ -1,6 +1,7 @@
 import { getImageLayout } from '../../lib/imageLayout'
 import { hasMeaningfulHtml } from '../../lib/sanitizeHtml'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
+import { blockNames } from '../../data/blockFactory'
 import type { ArticleBlock, ArticleSettings, ChartType, TextAlign } from '../../types'
 import {
   clampColumnCount,
@@ -24,10 +25,12 @@ import { getButtonPreset, resolveButtonStyle } from '../../lib/buttonStyle'
 
 interface SettingsPanelProps {
   block: ArticleBlock | null
+  showPageSettings: boolean
   settings: ArticleSettings
   onUpdateBlock: (block: ArticleBlock) => void
   onImportChart: (blockId: string, file: File) => Promise<void>
   onUpdateSettings: (settings: ArticleSettings) => void
+  onChangeScope: (page: boolean) => void
 }
 
 const number = (value: string, fallback = 0) => {
@@ -181,12 +184,15 @@ const importChartItemsFromClipboardText = (value: string) => {
 }
 
 export const SettingsPanel = ({
-  block,
+  block: selectedBlock,
+  showPageSettings,
   settings,
   onUpdateBlock,
   onImportChart,
   onUpdateSettings,
+  onChangeScope,
 }: SettingsPanelProps) => {
+  const block = showPageSettings ? null : selectedBlock
   const [columnCountInput, setColumnCountInput] = useState('')
 
   useEffect(() => {
@@ -196,32 +202,6 @@ export const SettingsPanel = ({
     }
 
     setColumnCountInput('')
-  }, [block])
-
-  const blockTitle = useMemo(() => {
-    if (!block) {
-      return 'Настройки страницы'
-    }
-
-    const map: Record<ArticleBlock['type'], string> = {
-      hero: 'Заголовок',
-      newsIntro: 'Новостной блок',
-      richText: 'Текст',
-      callout: 'Плашка',
-      important: 'Важно',
-      quote: 'Цитата',
-      background: 'Блок с фоном',
-      divider: 'Разделитель',
-      button: 'Кнопка',
-      table: 'Таблица',
-      columns: 'Колонки',
-      cards: 'Карточки',
-      image: 'Изображение',
-      stats: 'Статистика',
-      chart: 'Диаграмма',
-    }
-
-    return map[block.type]
   }, [block])
 
   const updateSpacing = (key: 'marginTop' | 'marginBottom', value: number) => {
@@ -2301,13 +2281,21 @@ export const SettingsPanel = ({
   }
 
   return (
-    <aside className="panel panel-right">
+    <aside className="panel panel-right" aria-label="Параметры редактора">
       <div className="panel-header">
-        <h2>{blockTitle}</h2>
-        <p>{block ? 'Выберите блок и меняйте параметры' : 'Общие настройки проекта'}</p>
+        <h2>Параметры</h2>
+        <div className="segmented panel-switch" role="group" aria-label="Область настроек">
+          <button type="button" aria-pressed={!showPageSettings} onClick={() => onChangeScope(false)}>Блок</button>
+          <button type="button" aria-pressed={showPageSettings} onClick={() => onChangeScope(true)}>Статья</button>
+        </div>
       </div>
-      {renderBlockSettings()}
-      {renderCommonSpacing()}
+      {block || showPageSettings ? (
+        <div className="inspector-fields">
+          {block && <h3 className="inspector-title">{blockNames[block.type]}</h3>}
+          {renderBlockSettings()}
+          {renderCommonSpacing()}
+        </div>
+      ) : <p className="library-empty">Выберите блок на холсте.</p>}
     </aside>
   )
 }

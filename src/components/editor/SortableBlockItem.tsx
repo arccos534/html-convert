@@ -1,5 +1,6 @@
 ﻿import { CSS } from '@dnd-kit/utilities'
 import { useSortable } from '@dnd-kit/sortable'
+import { blockNames } from '../../data/blockFactory'
 import type { ArticleBlock } from '../../types'
 import { BlockRenderer } from '../blocks/BlockRenderer'
 
@@ -14,24 +15,6 @@ interface SortableBlockItemProps {
   onImportChart: (blockId: string, file: File) => Promise<void>
 }
 
-const blockNames: Record<ArticleBlock['type'], string> = {
-  hero: 'Заголовок',
-  newsIntro: 'Новостной блок',
-  richText: 'Текст',
-  callout: 'Плашка',
-  important: 'Важно',
-  quote: 'Цитата',
-  background: 'Блок с фоном',
-  divider: 'Разделитель',
-  button: 'Кнопка',
-  table: 'Таблица',
-  columns: 'Колонки',
-  cards: 'Карточки',
-  image: 'Изображение',
-  stats: 'Статистика',
-  chart: 'Диаграмма',
-}
-
 export const SortableBlockItem = ({
   block,
   selected,
@@ -42,7 +25,7 @@ export const SortableBlockItem = ({
   onChange,
   onImportChart,
 }: SortableBlockItemProps) => {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
     useSortable({ id: block.id })
 
   const style = {
@@ -54,28 +37,38 @@ export const SortableBlockItem = ({
   return (
     <article
       ref={setNodeRef}
+      id={`block-${block.id}`}
       style={style}
       className={`canvas-item ${selected ? 'is-selected' : ''}`}
       onClick={onSelect}
+      onFocusCapture={onSelect}
     >
       {editable && (
         <header className="canvas-item-header">
           <button
             type="button"
+            ref={setActivatorNodeRef}
             className="drag-handle"
-            aria-label="Переместить блок"
             {...attributes}
             {...listeners}
+            aria-label={`Переместить блок «${blockNames[block.type]}»`}
+            title="Переместить блок"
           >
-            ?
+            <span aria-hidden="true">⠿</span>
           </button>
           <strong>{blockNames[block.type]}</strong>
           <div className="canvas-item-actions">
-            <button type="button" onClick={onDuplicate}>
-              Дублировать
+            <button type="button" className="icon-button" aria-label="Дублировать блок" title="Дублировать блок" onClick={(event) => {
+              event.stopPropagation()
+              onDuplicate()
+            }}>
+              <span className="ui-icon icon-copy" aria-hidden="true" />
             </button>
-            <button type="button" onClick={onDelete}>
-              Удалить
+            <button type="button" className="icon-button delete-block" aria-label="Удалить блок" title="Удалить блок" onClick={(event) => {
+              event.stopPropagation()
+              onDelete()
+            }}>
+              <span className="ui-icon icon-delete" aria-hidden="true" />
             </button>
           </div>
         </header>

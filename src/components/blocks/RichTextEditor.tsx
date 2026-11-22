@@ -20,6 +20,7 @@ interface RichTextEditorProps {
   requireSelectionForToolbarActions?: boolean
   align?: 'left' | 'center' | 'right'
   paragraphGap: number
+  trailingParagraph?: boolean
   onChange: (html: string) => void
   onAlignChange?: (align: 'left' | 'center' | 'right') => void
 }
@@ -58,6 +59,7 @@ export const RichTextEditor = ({
   requireSelectionForToolbarActions = false,
   align,
   paragraphGap,
+  trailingParagraph = true,
   onAlignChange,
 }: RichTextEditorProps) => {
   const { activateEditor, updateSelection, refreshToolbar, activeBinding } = useRichTextToolbar()
@@ -76,6 +78,9 @@ export const RichTextEditor = ({
   const extensions = useMemo(
     () => [
       StarterKit.configure({
+        link: false,
+        underline: false,
+        trailingNode: trailingParagraph ? {} : false,
         heading: {
           levels: [1, 2, 3],
         },
@@ -92,7 +97,7 @@ export const RichTextEditor = ({
         types: ['heading', 'paragraph'],
       }),
     ],
-    [],
+    [trailingParagraph],
   )
 
   const editor = useEditor({

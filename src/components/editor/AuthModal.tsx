@@ -1,21 +1,18 @@
 import { useState } from 'react'
+import { Modal } from './Modal'
 
 interface AuthModalProps {
-  open: boolean
+  onClose: () => void
   onLogin: (username: string, password: string) => Promise<void>
   onRegister: (username: string, password: string) => Promise<void>
 }
 
-export const AuthModal = ({ open, onLogin, onRegister }: AuthModalProps) => {
+export const AuthModal = ({ onClose, onLogin, onRegister }: AuthModalProps) => {
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-
-  if (!open) {
-    return null
-  }
 
   const submit = async () => {
     setBusy(true)
@@ -26,7 +23,7 @@ export const AuthModal = ({ open, onLogin, onRegister }: AuthModalProps) => {
       } else {
         await onRegister(username, password)
       }
-      setPassword('')
+      onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось выполнить вход.')
     } finally {
@@ -35,28 +32,40 @@ export const AuthModal = ({ open, onLogin, onRegister }: AuthModalProps) => {
   }
 
   return (
-    <div className="modal-overlay" role="dialog" aria-modal="true">
+    <Modal titleId="auth-title" className="auth-modal" onClose={() => { if (!busy) onClose() }}>
       <div className="modal-card auth-modal-card">
         <header>
           <div className="modal-title-group">
-            <h3>Аккаунт редактора</h3>
-            <p>Работы и последняя версия будут храниться на сервере и откроются с любого устройства после входа.</p>
+            <h2 id="auth-title">Аккаунт редактора</h2>
+            <p>Войдите, чтобы открывать сохранённые работы с разных устройств.</p>
           </div>
+          <button className="ui-button icon-button" type="button" aria-label="Закрыть" disabled={busy} onClick={onClose}>×</button>
         </header>
 
-        <div className="auth-modal-body">
-          <div className="auth-mode-switch">
+        <form className="auth-modal-body" onSubmit={(event) => {
+          event.preventDefault()
+          if (!busy) void submit()
+        }}>
+          <div className="segmented panel-switch" role="group" aria-label="Тип входа">
             <button
               type="button"
-              className={mode === 'login' ? 'is-active' : ''}
-              onClick={() => setMode('login')}
+              aria-pressed={mode === 'login'}
+              disabled={busy}
+              onClick={() => {
+                setMode('login')
+                setError('')
+              }}
             >
               Вход
             </button>
             <button
               type="button"
-              className={mode === 'register' ? 'is-active' : ''}
-              onClick={() => setMode('register')}
+              aria-pressed={mode === 'register'}
+              disabled={busy}
+              onClick={() => {
+                setMode('register')
+                setError('')
+              }}
             >
               Регистрация
             </button>
@@ -64,32 +73,29 @@ export const AuthModal = ({ open, onLogin, onRegister }: AuthModalProps) => {
 
           <label>
             Логин
-            <input value={username} onChange={(event) => setUsername(event.target.value)} />
+            <input required autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} />
           </label>
 
           <label>
             Пароль
             <input
               type="password"
+              required
+              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && !busy) {
-                  void submit()
-                }
-              }}
             />
           </label>
 
-          {error ? <p className="auth-error">{error}</p> : null}
+          {error && <p className="auth-error" role="alert">{error}</p>}
 
           <div className="auth-actions">
-            <button type="button" className="primary" onClick={() => void submit()} disabled={busy}>
+            <button type="submit" className="ui-button primary" disabled={busy}>
               {mode === 'login' ? 'Войти' : 'Создать аккаунт'}
             </button>
           </div>
-        </div>
+        </form>
       </div>
-    </div>
+    </Modal>
   )
 }

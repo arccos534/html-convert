@@ -1,5 +1,6 @@
 ﻿import {
   DndContext,
+  KeyboardSensor,
   PointerSensor,
   closestCenter,
   useSensor,
@@ -9,6 +10,7 @@
 import {
   SortableContext,
   arrayMove,
+  sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import type { ArticleBlock } from '../../types'
@@ -43,6 +45,7 @@ export const EditorCanvas = ({
         distance: 8,
       },
     }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -64,7 +67,22 @@ export const EditorCanvas = ({
 
   return (
     <div className="editor-canvas">
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+        accessibility={{
+          screenReaderInstructions: {
+            draggable: 'Нажмите пробел, чтобы взять блок. Перемещайте его стрелками, нажмите пробел для подтверждения или Escape для отмены.',
+          },
+          announcements: {
+            onDragStart: () => 'Блок взят.',
+            onDragOver: ({ over }) => over ? `Позиция ${blocks.findIndex((block) => block.id === over.id) + 1}.` : '',
+            onDragEnd: () => 'Перемещение завершено.',
+            onDragCancel: () => 'Перемещение отменено.',
+          },
+        }}
+      >
         <SortableContext
           items={blocks.map((block) => block.id)}
           strategy={verticalListSortingStrategy}
@@ -86,7 +104,8 @@ export const EditorCanvas = ({
       </DndContext>
       {blocks.length === 0 && (
         <div className="empty-state">
-          <p>Страница пустая. Добавьте первый блок из левой панели.</p>
+          <strong>Начните с первого блока</strong>
+          <p>Добавьте заголовок, текст или изображение из библиотеки.</p>
         </div>
       )}
     </div>

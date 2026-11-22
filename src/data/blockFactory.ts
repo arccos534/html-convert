@@ -310,6 +310,10 @@ export const createBlock = (type: BlockType): ArticleBlock => {
 }
 
 export const blockTemplates: BlockTemplate[] = [
+  { type: 'table', name: 'Таблица', description: 'Данные в строках и столбцах', category: 'Data' },
+  { type: 'stats', name: 'Статистика', description: 'Ключевые числа статьи', category: 'Data' },
+  { type: 'callout', name: 'Плашка', description: 'Информация с цветовым акцентом', category: 'Highlights' },
+  { type: 'background', name: 'Блок с фоном', description: 'Текст на цветном фоне', category: 'Layout' },
   {
     type: 'hero',
     name: 'Заголовок',
@@ -377,4 +381,8 @@ export const blockTemplates: BlockTemplate[] = [
     category: 'Media',
   },
 ]
+
+export const blockNames = Object.fromEntries(
+  blockTemplates.map(({ type, name }) => [type, name]),
+) as Record<BlockType, string>
 

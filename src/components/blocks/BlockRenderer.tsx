@@ -156,6 +156,7 @@ export const BlockRenderer = ({
                   value={getHeroTitleHtml(block.data)}
                   align={block.data.align}
                   paragraphGap={10}
+                  trailingParagraph={false}
                   readOnly={!canEdit}
                   requireSelectionForToolbarActions
                   onAlignChange={(align) => onChange({ ...block, data: { ...block.data, align } })}
