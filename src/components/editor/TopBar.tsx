@@ -8,6 +8,8 @@ interface TopBarProps {
   canUndo: boolean
   canRedo: boolean
   currentUsername: string | null
+  saveStatus: 'error' | 'saved' | 'pending'
+  onRetrySave: () => void
   theme: ThemeMode
   onTitleChange: (title: string) => void
   onUndo: () => void
@@ -30,6 +32,8 @@ export const TopBar = ({
   canRedo,
   currentUsername,
   theme,
+  saveStatus,
+  onRetrySave,
   onTitleChange,
   onUndo,
   onRedo,
@@ -43,6 +47,7 @@ export const TopBar = ({
   onLogout,
   onResetDemo,
 }: TopBarProps) => {
+  const moreRef = useRef<HTMLDetailsElement>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   return (
@@ -55,14 +60,19 @@ export const TopBar = ({
             value={title}
             onChange={(event) => onTitleChange(event.target.value)}
             placeholder="Название статьи"
+            aria-label="Название статьи"
           />
+          {currentUsername && <span className="autosave-status" role="status"><span>
+            {saveStatus === 'saved' ? 'Черновик сохранён' : saveStatus === 'pending' ? 'Сохранение черновика…' : 'Черновик не сохранён'}
+            </span>{saveStatus === 'error' && <button type="button" onClick={onRetrySave}>Повторить</button>}
+          </span>}
         </div>
 
         <div className="topbar-actions">
-          <button type="button" onClick={onUndo} disabled={!canUndo} title="Отменить последнее действие">
+          <button type="button" onClick={onUndo} disabled={!canUndo} aria-label="Отменить последнее действие" title="Отменить последнее действие">
             ↶
           </button>
-          <button type="button" onClick={onRedo} disabled={!canRedo} title="Вернуть отмененное">
+          <button type="button" onClick={onRedo} disabled={!canRedo} aria-label="Вернуть отменённое" title="Вернуть отменённое">
             ↷
           </button>
           <button type="button" onClick={onSaveDraft}>
@@ -71,30 +81,34 @@ export const TopBar = ({
           <button type="button" onClick={onOpenWorkspaces} className="ghost">
             Мои работы
           </button>
-          <button type="button" onClick={() => fileInputRef.current?.click()} className="ghost">
-            Импорт JSON
-          </button>
-          <button type="button" onClick={onResetDemo} className="ghost">
-            Демо
-          </button>
-          <button type="button" onClick={onToggleTheme} className="ghost">
-            {theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}
-          </button>
           <button type="button" onClick={onTogglePreview}>
             {previewMode ? 'Редактирование' : 'Предпросмотр'}
           </button>
-          <button type="button" onClick={onCopyHtml}>
+          <button type="button" className="primary" onClick={onCopyHtml}>
             Копировать HTML
           </button>
-          <button type="button" className="primary" onClick={onDownloadHtml}>
-            Скачать HTML
-          </button>
-          {currentUsername ? <span className="topbar-user">{currentUsername}</span> : null}
-          {currentUsername ? (
-            <button type="button" onClick={onLogout}>
-              Выйти
-            </button>
-          ) : null}
+          <details className="topbar-more" ref={moreRef} onKeyDown={(event) => {
+            if (event.key === 'Escape' && moreRef.current?.open) {
+              moreRef.current.open = false
+              moreRef.current.querySelector('summary')?.focus()
+            }
+          }}>
+            <summary>Ещё</summary>
+            <div className="topbar-more-panel" onClick={(event) => {
+              if (event.target instanceof Element && event.target.closest('button') && moreRef.current) {
+                moreRef.current.open = false
+                moreRef.current.querySelector('summary')?.focus()
+              }
+            }}>
+              <button type="button" onClick={onDownloadHtml}>Скачать HTML</button>
+              <button type="button" onClick={() => fileInputRef.current?.click()}>Открыть черновик JSON</button>
+              <button type="button" onClick={onToggleTheme}>{theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}</button>
+              <button type="button" onClick={() => {
+                if (window.confirm('Открыть демонстрационный пример вместо текущего черновика?')) onResetDemo()
+              }}>Открыть пример</button>
+              {currentUsername && <button type="button" onClick={onLogout}>Выйти из аккаунта</button>}
+            </div>
+          </details>
         </div>
       </div>
 

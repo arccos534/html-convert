@@ -1,0 +1,45 @@
+:where(.news-image-context) .news-image-layout { display: grid; gap: var(--news-image-gap, 24px); align-items: start; }
+:where(.news-image-context) .news-image-layout > * { min-width: 0; }
+:where(.news-image-context) .news-image-layout .image-wrap { margin: 0; }
+:where(.news-image-context) .news-image-layout .image-wrap img { display: block; width: 100%; max-width: 100%; height: auto; box-sizing: border-box; }
+:where(.news-image-context) .news-image-layout .image-wrap figcaption { margin-top: 6px; color: var(--muted, #52637a); font-size: 13px; }
+:where(.news-image-context) .news-image-layout .image-copy { overflow-wrap: anywhere; }
+:where(.news-image-context) .news-image-layout .image-copy > :first-child { margin-top: 0; }
+:where(.news-image-context) .news-image-layout .image-copy > :last-child { margin-bottom: 0; }
+
+:where(.news-image-context) .news-image-layout.image-mode-columns:not(.image-alone) {
+  grid-template-columns: min(var(--news-image-width, 50%), calc(100% - var(--news-image-gap, 24px) - 100px)) minmax(0, 1fr);
+}
+:where(.news-image-context) .news-image-layout.image-mode-columns:where(.image-side-right):not(.image-alone) {
+  grid-template-columns: minmax(0, 1fr) min(var(--news-image-width, 50%), calc(100% - var(--news-image-gap, 24px) - 100px));
+}
+:where(.news-image-context) .news-image-layout.image-mode-columns:where(.image-side-right):not(.image-alone) .image-wrap { order: 1; }
+:where(.news-image-context) .news-image-layout.image-mode-columns.image-position-center { align-items: center; }
+:where(.news-image-context) .news-image-layout.image-mode-columns.image-position-end { align-items: end; }
+
+:where(.news-image-context) .news-image-layout.image-mode-wrap:not(.image-alone) { display: flow-root; }
+:where(.news-image-context) .news-image-layout.image-mode-wrap:not(.image-alone) .image-wrap {
+  float: left;
+  width: min(var(--news-image-width, 50%), calc(100% - var(--news-image-gap, 24px) - 100px));
+  margin: 0 var(--news-image-gap, 24px) var(--news-image-gap, 24px) 0;
+}
+:where(.news-image-context) .news-image-layout.image-mode-wrap:where(.image-side-right):not(.image-alone) .image-wrap {
+  float: right;
+  margin: 0 0 var(--news-image-gap, 24px) var(--news-image-gap, 24px);
+}
+
+:where(.news-image-context) .news-image-layout:is(.image-mode-stack, .image-alone) { grid-template-columns: minmax(0, 1fr); }
+:where(.news-image-context) .news-image-layout:is(.image-mode-stack, .image-alone) .image-wrap { width: var(--news-image-width, 100%); }
+:where(.news-image-context) .news-image-layout.image-align-left .image-wrap { justify-self: start; }
+:where(.news-image-context) .news-image-layout.image-align-center .image-wrap { justify-self: center; }
+:where(.news-image-context) .news-image-layout.image-align-right .image-wrap { justify-self: end; }
+:where(.news-image-context) .news-image-layout.image-mode-stack.image-order-text-first .image-copy { order: -1; }
+
+/* Use the page width so desktop sidebars do not override the selected layout. */
+@media (max-width: 479px) {
+  :where(.news-image-context) .news-image-layout.image-mode-columns:not(.image-alone),
+  :where(.news-image-context) .news-image-layout.image-mode-wrap:not(.image-alone) { display: grid; grid-template-columns: minmax(0, 1fr); }
+  :where(.news-image-context) .news-image-layout.image-mode-wrap:not(.image-alone) .image-wrap,
+  :where(.news-image-context) .news-image-layout.image-mode-columns:not(.image-alone) .image-wrap { float: none; width: 100%; margin: 0; order: 0; }
+  :where(.news-image-context) .news-image-layout.image-order-text-first .image-copy { order: -1; }
+}

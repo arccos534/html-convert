@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local editor data and code index
+.local-server-data/
+graphify-out/

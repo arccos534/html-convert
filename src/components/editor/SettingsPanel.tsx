@@ -1,6 +1,7 @@
+import { getImageLayout } from '../../lib/imageLayout'
+import { hasMeaningfulHtml } from '../../lib/sanitizeHtml'
 import { useEffect, useMemo, useState } from 'react'
 import type { ArticleBlock, ArticleSettings, ChartType, TextAlign } from '../../types'
-import * as XLSX from 'xlsx'
 import {
   clampColumnCount,
   clampColumnHeight,
@@ -14,27 +15,18 @@ import {
   MIN_COLUMN_WIDTH,
 } from '../../lib/columns'
 import {
-  fetchImageAsDataUrl,
-  isEmbeddedImageSource,
-  readImageAsDataUrl,
-} from '../../lib/documentIO'
-import {
   buildHeroBackground,
   createDefaultHeroBackground,
   heroGradientDirections,
 } from '../../lib/heroBackground'
-import {
-  importSpreadsheetFile,
-  renderChartItemsToSvgDataUrl,
-  renderTableToSvgDataUrl,
-} from '../../lib/chartImport'
-import { importExactSpreadsheetVisual } from '../../lib/excelVisualImport'
+import { chartFileAccept } from '../../lib/chartImport'
 import { getButtonPreset, resolveButtonStyle } from '../../lib/buttonStyle'
 
 interface SettingsPanelProps {
   block: ArticleBlock | null
   settings: ArticleSettings
   onUpdateBlock: (block: ArticleBlock) => void
+  onImportChart: (blockId: string, file: File) => Promise<void>
   onUpdateSettings: (settings: ArticleSettings) => void
 }
 
@@ -107,6 +99,7 @@ const normalizeImportedChartValue = (value: unknown) => {
 }
 
 const importChartItemsFromFile = async (file: File) => {
+  const XLSX = await import('xlsx')
   const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' })
   const sheet = workbook.Sheets[workbook.SheetNames[0]]
   const rows = XLSX.utils.sheet_to_json<(string | number | null)[]>(sheet, {
@@ -191,6 +184,7 @@ export const SettingsPanel = ({
   block,
   settings,
   onUpdateBlock,
+  onImportChart,
   onUpdateSettings,
 }: SettingsPanelProps) => {
   const [columnCountInput, setColumnCountInput] = useState('')
@@ -312,19 +306,6 @@ export const SettingsPanel = ({
         />
       </label>
 
-      <label className="checkbox-row">
-        <input
-          type="checkbox"
-          checked={settings.includeImagesAsBase64}
-          onChange={(event) =>
-            onUpdateSettings({
-              ...settings,
-              includeImagesAsBase64: event.target.checked,
-            })
-          }
-        />
-        Встраивать локальные изображения в экспорт
-      </label>
     </div>
   )
 
@@ -369,8 +350,35 @@ export const SettingsPanel = ({
       const chartBlock = block as Extract<ArticleBlock, { type: 'chart' }>
       const chartData = chartBlock.data
 
+      const updateChart = (patch: Partial<typeof chartData>) =>
+        onUpdateBlock({ ...chartBlock, data: { ...chartData, ...patch } })
+
       return (
         <div className="settings-stack">
+          <label className="checkbox-row">
+            <input type="checkbox" checked={chartData.headingEnabled !== false}
+              onChange={event => updateChart({ headingEnabled: event.target.checked })} />
+            Заголовок над диаграммой
+          </label>
+          <label>Режим размещения
+            <select value={chartData.textLayout || 'columns'} onChange={event => updateChart({ textLayout: event.target.value as 'columns' | 'wrap' | 'stack' })}>
+              <option value="columns">Колонки</option><option value="wrap">Обтекание</option><option value="stack">Друг под другом</option>
+            </select>
+          </label>
+          <label>Расстояние до текста
+            <input type="range" min={0} max={48} value={chartData.textGap ?? 24}
+              onChange={event => updateChart({ textGap: Number(event.target.value) })} />
+          </label>
+          <label>Положение текста
+            <select value={chartData.textPosition || 'start'} onChange={event => updateChart({ textPosition: event.target.value as 'start' | 'center' | 'end' })}>
+              <option value="start">Сверху</option><option value="center">По центру</option><option value="end">Снизу</option>
+            </select>
+          </label>
+          <label>Порядок сверху вниз
+            <select value={chartData.stackOrder || 'image-first'} onChange={event => updateChart({ stackOrder: event.target.value as 'image-first' | 'text-first' })}>
+              <option value="image-first">Диаграмма, текст</option><option value="text-first">Текст, диаграмма</option>
+            </select>
+          </label>
           <label>
             Заголовок
             <input
@@ -408,25 +416,6 @@ export const SettingsPanel = ({
 
           <div className="settings-inline-card settings-item-card">
             <label>
-              Максимум шкалы
-                <input
-                  type="number"
-                  min={1}
-                  disabled={chartData.importSource === 'excel' || chartData.importSource === 'excelVisual'}
-                  value={chartData.max}
-                  onChange={(event) =>
-                    onUpdateBlock({
-                    ...chartBlock,
-                    data: {
-                      ...chartData,
-                      max: Math.max(1, number(event.target.value, chartData.max)),
-                    },
-                  })
-                }
-              />
-            </label>
-
-            <label>
               Выравнивание
               <select
                 value={chartData.align || 'left'}
@@ -446,7 +435,7 @@ export const SettingsPanel = ({
               </select>
             </label>
 
-            {chartData.imageSrc ? (
+            {(
               <>
                 <label>
                   Масштаб диаграммы: {chartData.imageWidth || 100}%
@@ -503,7 +492,7 @@ export const SettingsPanel = ({
                   Обводка
                 </label>
               </>
-            ) : null}
+            )}
 
             <label className="checkbox-row settings-checkbox-card">
               <input
@@ -527,7 +516,7 @@ export const SettingsPanel = ({
                 Импорт файла
                 <input
                   type="file"
-                  accept=".xlsx,.xls,.csv,.svg,.png,.jpg,.jpeg,.webp"
+                  accept={chartFileAccept}
                   onChange={async (event) => {
                     const file = event.target.files?.[0]
                     if (!file) {
@@ -535,85 +524,7 @@ export const SettingsPanel = ({
                     }
 
                     try {
-                      const fileName = file.name.toLowerCase()
-                      const isSpreadsheet = /\.(xlsx|xls|csv)$/i.test(fileName)
-                      const isImageFile =
-                        file.type.startsWith('image/') ||
-                        /\.(svg|png|jpe?g|webp)$/i.test(fileName)
-
-                      if (isSpreadsheet) {
-                        const exactVisual = await importExactSpreadsheetVisual(file)
-                        if (exactVisual) {
-                          onUpdateBlock({
-                            ...chartBlock,
-                            data: {
-                              ...chartData,
-                              importSource: 'excelVisual',
-                              imageSrc: exactVisual,
-                              imageAlt: file.name.replace(/\.[^.]+$/, '') || 'Диаграмма',
-                              tableHeaders: [],
-                              tableRows: [],
-                            },
-                          })
-                          return
-                        }
-
-                        const imported = await importSpreadsheetFile(file)
-                        if (!imported) {
-                          window.alert('Не удалось распознать данные файла.')
-                          return
-                        }
-
-                        if (imported.kind === 'chart') {
-                          onUpdateBlock({
-                            ...chartBlock,
-                            data: {
-                              ...chartData,
-                              importSource: 'excel',
-                              imageSrc: imported.svgDataUrl || renderChartItemsToSvgDataUrl(imported.items),
-                              imageAlt: file.name.replace(/\.[^.]+$/, '') || 'Диаграмма',
-                              items: imported.items,
-                              max: imported.max,
-                              tableHeaders: [],
-                              tableRows: [],
-                            },
-                          })
-                        } else {
-                          onUpdateBlock({
-                            ...chartBlock,
-                            data: {
-                              ...chartData,
-                              importSource: 'excel',
-                              imageSrc:
-                                imported.svgDataUrl ||
-                                renderTableToSvgDataUrl(imported.headers, imported.rows),
-                              imageAlt: file.name.replace(/\.[^.]+$/, '') || 'Таблица',
-                              tableHeaders: imported.headers,
-                              tableRows: imported.rows,
-                            },
-                          })
-                        }
-
-                        return
-                      }
-
-                      if (isImageFile) {
-                        const src = await readImageAsDataUrl(file)
-                        onUpdateBlock({
-                          ...chartBlock,
-                          data: {
-                            ...chartData,
-                            importSource: 'image',
-                            imageSrc: src,
-                            imageAlt: file.name.replace(/\.[^.]+$/, '') || 'Диаграмма',
-                            tableHeaders: [],
-                            tableRows: [],
-                          },
-                        })
-                        return
-                      }
-
-                      window.alert('Поддерживаются Excel, CSV и изображения.')
+                      await onImportChart(chartBlock.id, file)
                     } finally {
                       event.target.value = ''
                     }
@@ -910,76 +821,18 @@ export const SettingsPanel = ({
               Импорт файла
               <input
                 type="file"
-                accept=".xlsx,.xls,.csv,.svg,.png,.jpg,.jpeg,.webp"
+                accept={chartFileAccept}
                 onChange={async (event) => {
                   const file = event.target.files?.[0]
                   if (!file) {
                     return
                   }
 
-                  const fileName = file.name.toLowerCase()
-                  const isImageFile =
-                    file.type.startsWith('image/') ||
-                    /\.(svg|png|jpe?g|webp)$/i.test(fileName)
-
-                  if (!isImageFile) {
-                    const imported = await importSpreadsheetFile(file)
-                    if (!imported) {
-                      event.target.value = ''
-                      return
-                    }
-
-                    if (imported.kind === 'chart') {
-                      onUpdateBlock({
-                        ...chartBlock,
-                        data: {
-                          ...chartData,
-                          importSource: 'excel',
-                          imageSrc: renderChartItemsToSvgDataUrl(imported.items, {
-                            title: chartData.title,
-                            subtitle: chartData.description,
-                          }),
-                          imageAlt: file.name.replace(/\.[^.]+$/, '') || 'Диаграмма',
-                          items: imported.items,
-                          max: imported.max,
-                          tableHeaders: [],
-                          tableRows: [],
-                        },
-                      })
-                    } else {
-                      onUpdateBlock({
-                        ...chartBlock,
-                        data: {
-                          ...chartData,
-                          importSource: 'excel',
-                          imageSrc: renderTableToSvgDataUrl(imported.headers, imported.rows, {
-                            title: chartData.title,
-                            subtitle: chartData.description,
-                          }),
-                          imageAlt: file.name.replace(/\.[^.]+$/, '') || 'Таблица',
-                          tableHeaders: imported.headers,
-                          tableRows: imported.rows,
-                        },
-                      })
-                    }
-
+                  try {
+                    await onImportChart(chartBlock.id, file)
+                  } finally {
                     event.target.value = ''
-                    return
                   }
-
-                  const src = await readImageAsDataUrl(file)
-
-                  onUpdateBlock({
-                    ...chartBlock,
-                    data: {
-                      ...chartData,
-                      importSource: 'image',
-                      imageSrc: src,
-                      imageAlt: file.name.replace(/\.[^.]+$/, '') || 'Диаграмма',
-                    },
-                  })
-
-                  event.target.value = ''
                 }}
               />
             </label>
@@ -1666,7 +1519,7 @@ export const SettingsPanel = ({
           </div>
         )
 
-      case 'button':
+      case 'button': {
         const buttonPreset = getButtonPreset(block.data.variant)
         const buttonStyle = resolveButtonStyle(block.data)
         const effectiveButtonRadiusMax = Math.max(
@@ -1856,6 +1709,7 @@ export const SettingsPanel = ({
           </div>
         )
 
+      }
       case 'table':
         return (
           <div className="settings-stack">
@@ -2094,65 +1948,81 @@ export const SettingsPanel = ({
           </div>
         )
 
-      case 'image':
+      case 'image': {
+        const { data } = block
+        const hasText = hasMeaningfulHtml(data.textHtml)
+        const layout = getImageLayout(data, hasText)
+        const updateImage = (patch: Partial<typeof data>) => onUpdateBlock({ ...block, data: { ...data, ...patch } })
         return (
           <div className="settings-stack">
-            <label>
-              URL изображения
-              <input
-                value={block.data.src}
-                onChange={(event) =>
-                  onUpdateBlock({ ...block, data: { ...block.data, src: event.target.value } })
-                }
-              />
-            </label>
+            <section className="settings-section">
+              <h4>Изображение и текст</h4>
+              <label>
+                Режим размещения
+                <select value={layout.mode} onChange={(event) => {
+                  const textLayout = event.target.value as NonNullable<typeof data.textLayout>
+                  updateImage({ textLayout })
+                }}>
+                  <option value="columns">Рядом в двух колонках</option>
+                  <option value="wrap">Обтекание текстом</option>
+                  <option value="stack">Друг под другом</option>
+                </select>
+              </label>
 
-            <label>
-              Загрузить файл
-              <input
-                type="file"
-                accept="image/*"
-                onChange={async (event) => {
-                  const file = event.target.files?.[0]
-                  if (!file) {
-                    return
-                  }
+              {layout.mode !== 'stack' && (
+                <label>
+                  Сторона изображения
+                  <select value={layout.side} onChange={(event) => updateImage({ imageSide: event.target.value as typeof data.imageSide })}>
+                    <option value="left">Слева от текста</option>
+                    <option value="right">Справа от текста</option>
+                  </select>
+                </label>
+              )}
 
-                  const src = await readImageAsDataUrl(file)
-                  onUpdateBlock({
-                    ...block,
-                    data: {
-                      ...block.data,
-                      src,
-                      alt: block.data.alt || file.name.replace(/\.[^.]+$/, ''),
-                    },
-                  })
-                }}
-              />
-            </label>
+              <label>
+                Ширина изображения: {layout.width}%
+                <input type="range" min={20} max={layout.maxWidth} value={layout.width}
+                  onChange={(event) => updateImage({ width: Number(event.target.value) })} />
+              </label>
 
-            <button
-              type="button"
-              className="settings-action-button"
-              disabled={!block.data.src.trim() || isEmbeddedImageSource(block.data.src)}
-              onClick={async () => {
-                try {
-                  const src = await fetchImageAsDataUrl(block.data.src)
-                  onUpdateBlock({ ...block, data: { ...block.data, src } })
-                } catch {
-                  window.alert(
-                    'Не удалось встроить картинку по URL. Если внешний сайт блокирует скачивание, загрузите файл через поле выше.',
-                  )
-                }
-              }}
-            >
-              Встроить URL в код
-            </button>
+              <label>
+                Расстояние между изображением и текстом: {layout.gap} пкс
+                <input type="range" min={0} max={48} value={layout.gap}
+                  onChange={(event) => updateImage({ textGap: Number(event.target.value) })} />
+              </label>
 
-            <p className="settings-tip">
-              Загруженный файл автоматически превращается в код картинки внутри HTML. Для Bitrix это
-              самый надёжный способ.
-            </p>
+              {layout.mode === 'columns' && (
+                <label>
+                  Выравнивание по высоте
+                  <select value={layout.position}
+                    onChange={(event) => updateImage({ textPosition: event.target.value as NonNullable<typeof data.textPosition> })}>
+                    <option value="start">По верхнему краю</option>
+                    <option value="center">По центру</option>
+                    <option value="end">По нижнему краю</option>
+                  </select>
+                </label>
+              )}
+
+              <label>
+                {layout.mode === 'stack' ? 'Порядок сверху вниз' : 'Порядок на узком экране'}
+                <select value={layout.order}
+                  onChange={(event) => updateImage({ stackOrder: event.target.value as NonNullable<typeof data.stackOrder> })}>
+                  <option value="image-first">Сначала изображение</option>
+                  <option value="text-first">Сначала текст</option>
+                </select>
+              </label>
+
+              {(layout.mode === 'stack' || !hasText) && (
+                <label>
+                  Выравнивание одиночного изображения
+                  <select value={layout.align} onChange={(event) => updateImage({ align: event.target.value as typeof data.align })}>
+                    {alignOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </label>
+              )}
+
+              {!hasText && <p className="settings-tip">Размещение применяется к основному тексту в карточке изображения.</p>}
+            </section>
 
             <label>
               Alt-текст
@@ -2163,55 +2033,6 @@ export const SettingsPanel = ({
                 }
               />
             </label>
-
-            <label>
-              Подпись
-              <input
-                value={block.data.caption}
-                onChange={(event) =>
-                  onUpdateBlock({ ...block, data: { ...block.data, caption: event.target.value } })
-                }
-              />
-            </label>
-
-            <label>
-              Расположение картинки
-              <select
-                value={block.data.imageSide || 'left'}
-                onChange={(event) =>
-                  onUpdateBlock({
-                    ...block,
-                    data: { ...block.data, imageSide: event.target.value as 'left' | 'right' },
-                  })
-                }
-              >
-                <option value="left">Картинка слева, текст справа</option>
-                <option value="right">Текст слева, картинка справа</option>
-              </select>
-            </label>
-
-            <p className="settings-tip">Текст рядом с изображением редактируется прямо в блоке через кнопку `...`.</p>
-
-
-            <label>
-              Ширина изображения: {block.data.width}%
-              <input
-                type="range"
-                min={20}
-                max={100}
-                value={block.data.width}
-                onChange={(event) =>
-                  onUpdateBlock({
-                    ...block,
-                    data: { ...block.data, width: number(event.target.value, block.data.width) },
-                  })
-                }
-              />
-            </label>
-
-            {renderAlignSelect(block.data.align, (align) =>
-              onUpdateBlock({ ...block, data: { ...block.data, align } }),
-            )}
 
             <label>
               Скругление углов: {block.data.radius}px
@@ -2258,6 +2079,7 @@ export const SettingsPanel = ({
             </label>
           </div>
         )
+      }
 
       case 'stats':
         return (

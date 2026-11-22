@@ -1,27 +1,25 @@
-import * as XLSX from 'xlsx'
-import type { ChartItem } from '../types'
+import type { WorkBook } from 'xlsx'
+import type { ChartData, ChartItem, ChartSeries } from '../types'
+import { getChartScaleDivisions } from './chartScale'
+import { readImageAsDataUrl } from './documentIO'
 
 const chartPalette = ['#1f8efa', '#38bdf8', '#16a34a', '#f59e0b', '#ef4444', '#7c3aed', '#0ea5a4', '#8b5cf6']
 
-const normalizeImportedChartValue = (value: unknown) => {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value
-  }
-
-  const normalized = String(value ?? '')
+const normalizeImportedChartValue = (value: string) => {
+  const normalized = value
     .replace(/\s+/g, '')
     .replace(',', '.')
-    .replace(/[^\d.-]/g, '')
+    .replace(/%$/, '')
+
+  if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(normalized)) {
+    return null
+  }
+
   const parsed = Number(normalized)
   return Number.isFinite(parsed) ? parsed : null
 }
 
-const normalizeColor = (value: unknown, index: number) => {
-  const normalized = String(value ?? '').trim()
-  return /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(normalized)
-    ? normalized
-    : chartPalette[index % chartPalette.length]
-}
+const isChartColor = (value: string) => /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(value)
 
 const escapeXml = (value: string) =>
   value
@@ -87,10 +85,10 @@ const normalizeSheetRows = (rows: unknown[][]) => {
   )
 }
 
-const findFirstNonEmptySheetRows = (workbook: XLSX.WorkBook) => {
+const findFirstNonEmptySheetRows = (workbook: WorkBook, utils: typeof import('xlsx').utils) => {
   for (const sheetName of workbook.SheetNames) {
     const sheet = workbook.Sheets[sheetName]
-    const rawRows = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+    const rawRows = utils.sheet_to_json<unknown[]>(sheet, {
       header: 1,
       raw: true,
       defval: '',
@@ -104,100 +102,101 @@ const findFirstNonEmptySheetRows = (workbook: XLSX.WorkBook) => {
   return null
 }
 
-const buildSingleSeriesChartItems = (rows: string[][]) => {
+const buildSingleSeriesChartItems = (rows: string[][], hasColorColumn: boolean) => {
   const items: ChartItem[] = []
-
-  for (let index = 0; index < rows.length; index += 1) {
-    const row = rows[index]
-    const label = String(row[0] ?? '').trim()
-    const valueRaw = row[1]
-    const extraCells = row.slice(3).some((cell) => String(cell).trim() !== '')
-
-    if (!label || extraCells) {
-      return null
-    }
-
-    const value = normalizeImportedChartValue(valueRaw)
-    if (value === null) {
+  for (const [label, valueText, color] of rows) {
+    const value = normalizeImportedChartValue(valueText)
+    if (!label || value === null || value < 0) {
       return null
     }
 
     items.push({
       label,
       value,
-      color: normalizeColor(row[2], index),
+      color: hasColorColumn && isChartColor(color) ? color : chartPalette[items.length % chartPalette.length],
     })
   }
-
   return items.length ? items : null
 }
 
-type MultiSeriesChart = {
-  categories: string[]
-  series: Array<{
-    name: string
-    color: string
-    values: number[]
-  }>
-}
-
-const buildMultiSeriesChart = (rows: string[][]): MultiSeriesChart | null => {
-  if (rows.length < 2 || rows[0].length < 3) {
+const buildMultiSeriesChart = (body: string[][], headers?: string[]): ChartSeries[] | null => {
+  if (!body.length || body[0].length < 3 || body.some((row) => !row[0])) {
     return null
   }
 
-  const headers = rows[0]
-  const body = rows.slice(1)
-  const numericColumnIndexes = headers
-    .map((_, index) => index)
-    .filter((index) => index > 0)
-    .filter((index) => body.some((row) => normalizeImportedChartValue(row[index]) !== null))
-
-  if (!numericColumnIndexes.length) {
-    return null
-  }
-
-  const categories = body.map((row) => String(row[0] ?? '').trim()).filter(Boolean)
-  if (categories.length !== body.length) {
-    return null
-  }
-
-  const series = numericColumnIndexes.map((columnIndex, index) => {
-    const values = body.map((row) => normalizeImportedChartValue(row[columnIndex]) ?? 0)
-    return {
-      name: String(headers[columnIndex] ?? `Серия ${index + 1}`).trim() || `Серия ${index + 1}`,
-      color: chartPalette[index % chartPalette.length],
-      values,
+  const series: ChartSeries[] = []
+  for (let column = 1; column < body[0].length; column += 1) {
+    const cells = body.map((row) => row[column])
+    const values = cells.map(normalizeImportedChartValue)
+    if (values.every((value) => value === null) || values.some((value, index) =>
+      value === null ? Boolean(cells[index]) : value < 0,
+    )) {
+      return null
     }
-  })
-
-  return series.length ? { categories, series } : null
+    series.push({
+      name: headers?.[column] || `Серия ${column}`,
+      color: chartPalette[(column - 1) % chartPalette.length],
+      values,
+    })
+  }
+  return series
 }
 
-export type SpreadsheetImportResult =
-  | { kind: 'chart'; items: ChartItem[]; max: number; svgDataUrl?: string }
-  | { kind: 'table'; headers: string[]; rows: string[][]; svgDataUrl?: string }
+type SpreadsheetImportResult =
+  | { kind: 'chart'; items: ChartItem[]; max: number; series?: ChartSeries[] }
+  | { kind: 'table'; headers: string[]; rows: string[][] }
 
-export const importSpreadsheetFile = async (
-  file: File,
-): Promise<SpreadsheetImportResult | null> => {
-  const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' })
-  const sheetData = findFirstNonEmptySheetRows(workbook)
+const importSpreadsheetFile = async (file: File): Promise<SpreadsheetImportResult | null> => {
+  const XLSX = await import('xlsx')
+  const bytes = await file.arrayBuffer()
+  let workbook: WorkBook
+
+  if (/\.csv$/i.test(file.name)) {
+    const signature = new Uint8Array(bytes, 0, Math.min(bytes.byteLength, 2))
+    let csv: string
+    try {
+      const encoding = signature[0] === 0xff && signature[1] === 0xfe ? 'utf-16le'
+        : signature[0] === 0xfe && signature[1] === 0xff ? 'utf-16be'
+          : 'utf-8'
+      csv = new TextDecoder(encoding, { fatal: true }).decode(bytes)
+    } catch {
+      csv = new TextDecoder('windows-1251').decode(bytes)
+    }
+    workbook = XLSX.read(csv, { type: 'string', raw: true })
+  } else {
+    workbook = XLSX.read(bytes, { type: 'array' })
+    const signature = new Uint8Array(bytes, 0, Math.min(bytes.byteLength, 4))
+    const isLegacyExcel = signature[0] === 0xd0 && signature[1] === 0xcf && signature[2] === 0x11 && signature[3] === 0xe0
+      || [0x09, 0x0809, 0x0409, 0x0209].includes(signature[0] + signature[1] * 256)
+    if (!isLegacyExcel && !/^(xlsx|xlsm|xlsb|xls|biff[258]|xlml)$/.test(workbook.bookType ?? '')) {
+      return null
+    }
+  }
+
+  const sheetData = findFirstNonEmptySheetRows(workbook, XLSX.utils)
   if (!sheetData) {
     return null
   }
 
-  const { rows } = sheetData
+  const [firstRow, ...body] = sheetData.rows
+  const seriesHeaders = firstRow.slice(1)
+  const hasLabelHeader = /^(муниципалитет|район|город|округ|категория|период|показатель|дата|месяц|год|название|label|category|period|date|month|year)$/i.test(firstRow[0])
+  const hasYearHeaders = seriesHeaders.length > 1 && seriesHeaders.every((cell) => /^(19|20)\d{2}$/.test(cell))
+  const hasTextHeaders = seriesHeaders.some(Boolean) &&
+    seriesHeaders.every((cell) => normalizeImportedChartValue(cell) === null)
+  const hasHeader = body.length > 0 && (
+    hasLabelHeader || hasYearHeaders || hasTextHeaders
+  )
+  const chartRows = hasHeader ? body : sheetData.rows
+  const hasColorColumn = firstRow.length === 3 && (
+    (/^(цвет|color)$/i.test(firstRow[2]) || chartRows.some((row) => isChartColor(row[2]))) &&
+    chartRows.every((row) => !row[2] || isChartColor(row[2]))
+  )
+  const singleSeriesItems = firstRow.length === 2 || hasColorColumn
+    ? buildSingleSeriesChartItems(chartRows, hasColorColumn)
+    : null
 
-  const headerLike =
-    rows.length > 1 &&
-    normalizeImportedChartValue(rows[0]?.[1]) === null &&
-    normalizeImportedChartValue(rows[1]?.[1]) !== null
-
-  const chartRows = headerLike ? rows.slice(1) : rows
-  const singleSeriesItems = buildSingleSeriesChartItems(chartRows)
-
-  if (singleSeriesItems?.length) {
+  if (singleSeriesItems) {
     return {
       kind: 'chart',
       items: singleSeriesItems,
@@ -205,85 +204,122 @@ export const importSpreadsheetFile = async (
     }
   }
 
-  const multiSeriesChart = buildMultiSeriesChart(rows)
-  if (multiSeriesChart) {
+  const series = buildMultiSeriesChart(chartRows, hasHeader ? firstRow : undefined)
+  if (series) {
+    const items = chartRows.map(([label], index) => ({
+      label,
+      value: Math.max(0, ...series.map((item) => item.values[index] ?? 0)),
+      color: series[0].color,
+    }))
     return {
       kind: 'chart',
-      items: multiSeriesChart.categories.map((label, index) => ({
-        label,
-        value: Math.max(...multiSeriesChart.series.map((series) => series.values[index] ?? 0), 0),
-        color: multiSeriesChart.series[0]?.color || chartPalette[index % chartPalette.length],
-      })),
-      max: Math.max(1, ...multiSeriesChart.series.flatMap((series) => series.values)),
-      svgDataUrl: renderMultiSeriesChartToSvgDataUrl(multiSeriesChart.categories, multiSeriesChart.series),
+      items,
+      max: Math.max(1, ...items.map((item) => item.value)),
+      series,
     }
   }
 
-  const headers = rows[0]
-  const bodyRows = rows.slice(1)
-
-  return {
-    kind: 'table',
-    headers,
-    rows: bodyRows,
-  }
+  return { kind: 'table', headers: firstRow, rows: body }
 }
 
-export const renderChartItemsToSvgDataUrl = (
+export const chartFileAccept = '.xlsx,.xls,.csv,.svg,.png,.jpg,.jpeg,.webp'
+
+export const importChartFile = async (file: File): Promise<Partial<ChartData>> => {
+  const imageAlt = file.name.replace(/\.[^.]+$/, '') || 'Диаграмма'
+  const source = { imageAlt, tableHeaders: [], tableRows: [], spreadsheetChart: undefined }
+  if (/\.(xlsx|xls|csv)$/i.test(file.name)) {
+    const imported = await importSpreadsheetFile(file)
+    if (!imported) {
+      throw new Error('Не удалось распознать данные файла.')
+    }
+
+    if (imported.kind === 'chart') {
+      return {
+        ...source,
+        importSource: 'excel',
+        imageSrc: '',
+        spreadsheetChart: { series: imported.series },
+        items: imported.items,
+        max: imported.max,
+      }
+    }
+
+    return {
+      ...source,
+      importSource: 'excel',
+      imageSrc: renderTableToSvgDataUrl(imported.headers, imported.rows),
+      tableHeaders: imported.headers,
+      tableRows: imported.rows,
+    }
+  }
+
+  if (/\.(svg|png|jpe?g|webp)$/i.test(file.name)) {
+    const imageSrc = await readImageAsDataUrl(file)
+    const image = new Image()
+    image.src = imageSrc
+    await image.decode()
+    return { ...source, importSource: 'image', imageSrc }
+  }
+
+  throw new Error('Поддерживаются Excel, CSV и изображения.')
+}
+
+export const getChartImageSrc = (data: ChartData) => {
+  if (!data.spreadsheetChart && data.imageSrc) {
+    return data.imageSrc
+  }
+
+  const divisions = data.showGrid === false ? 0 : getChartScaleDivisions(data.scaleDivisions)
+  const max = Math.max(1, data.max, ...data.items.map((item) => item.value))
+  const { series } = data.spreadsheetChart || {}
+  return series
+    ? renderMultiSeriesChartToSvgDataUrl(data.items.map((item) => item.label), series, max, divisions, data)
+    : renderChartItemsToSvgDataUrl(data.items, { max, divisions, showValues: data.showValues ?? true, radius: data.barRadius ?? 3, barHeight: data.barHeight ?? 18 })
+}
+
+const formatTick = (value: number) => value.toLocaleString('ru-RU', { maximumSignificantDigits: 5 })
+
+const renderChartItemsToSvgDataUrl = (
   items: ChartItem[],
-  options?: { title?: string; subtitle?: string },
+  { max, divisions, showValues, radius, barHeight }: { max: number; divisions: number; showValues: boolean; radius: number; barHeight: number },
 ) => {
-  const title = options?.title?.trim() ?? ''
-  const subtitle = options?.subtitle?.trim() ?? ''
-  const width = 1120
-  const paddingX = 40
-  const cardRadius = 26
-  const gap = 14
-  const labelWidth = 120
-  const valueWidth = 56
-  const rowHeight = 46
-  const barHeight = 18
-  const titleLines = title ? wrapText(title, 48) : []
-  const subtitleLines = subtitle ? wrapText(subtitle, 80) : []
-  const titleHeight =
-    titleLines.length * 36 + subtitleLines.length * 24 + (titleLines.length || subtitleLines.length ? 34 : 0)
-  const chartTop = 38 + titleHeight
-  const height = chartTop + items.length * rowHeight + 42
+  const width = 580
+  const paddingX = 22
+  const cardRadius = 16
+  const gap = 10
+  const labelWidth = 116
+  const valueWidth = 64
+  const labels = items.map((item) => wrapText(item.label, 13))
+  const rowHeight = Math.max(barHeight + 18, 46, ...labels.map((label) => label.length * 16 + 12))
+  const chartTop = 20
+  const axisBottom = chartTop + items.length * rowHeight
+  const height = axisBottom + 34
   const innerWidth = width - paddingX * 2
   const barWidth = innerWidth - labelWidth - valueWidth - gap * 2
-  const maxValue = Math.max(1, ...items.map((item) => item.value))
-
-  const titleText = titleLines.length
-    ? `<text x="${paddingX}" y="56" fill="#142b4d" font-size="34" font-weight="700" font-family="Open Sans, Arial, sans-serif">${titleLines
-        .map(
-          (line, index) =>
-            `<tspan x="${paddingX}" dy="${index === 0 ? 0 : 38}">${escapeXml(line)}</tspan>`,
-        )
-        .join('')}</text>`
-    : ''
-
-  const subtitleStartY = 56 + Math.max(0, (titleLines.length - 1) * 38) + (titleLines.length ? 28 : 0)
-  const subtitleText = subtitleLines.length
-    ? `<text x="${paddingX}" y="${subtitleStartY}" fill="#5e7190" font-size="20" font-weight="400" font-family="Open Sans, Arial, sans-serif">${subtitleLines
-        .map(
-          (line, index) =>
-            `<tspan x="${paddingX}" dy="${index === 0 ? 0 : 26}">${escapeXml(line)}</tspan>`,
-        )
-        .join('')}</text>`
-    : ''
+  const barX = paddingX + labelWidth + gap
+  const gridSvg = divisions ? Array.from({ length: divisions + 1 }, (_, index) => {
+    const x = barX + barWidth * index / divisions
+    const value = formatTick(max * (index / divisions))
+    const showLabel = divisions <= 5 || index === 0 || index === divisions || index * 2 === divisions
+    return `
+      <line x1="${x}" y1="${chartTop}" x2="${x}" y2="${axisBottom}" stroke="#bdcde3" />
+      ${showLabel ? `<text x="${x}" y="${axisBottom + 20}" fill="#46607f" font-size="16" text-anchor="middle" font-family="Open Sans, Arial, sans-serif">${value}</text>` : ''}
+    `
+  }).join('') : ''
 
   const rowsSvg = items
     .map((item, index) => {
-      const y = chartTop + index * rowHeight
-      const barX = paddingX + labelWidth + gap
-      const percent = Math.max(0, Math.min(100, (item.value / maxValue) * 100))
-      const filledWidth = Math.max(12, (barWidth * percent) / 100)
+      const centerY = chartTop + (index + 0.5) * rowHeight
+      const filledWidth = barWidth * (item.value / max)
+      const label = labels[index]
 
       return `
-        <text x="${paddingX}" y="${y + 28}" fill="#46607f" font-size="18" font-weight="500" font-family="Open Sans, Arial, sans-serif">${escapeXml(item.label)}</text>
-        <rect x="${barX}" y="${y + 12}" width="${barWidth}" height="${barHeight}" rx="999" fill="#e7eef9" />
-        <rect x="${barX}" y="${y + 12}" width="${filledWidth}" height="${barHeight}" rx="999" fill="${escapeXml(item.color)}" />
-        <text x="${barX + barWidth + gap}" y="${y + 28}" fill="#46607f" font-size="18" font-weight="500" font-family="Open Sans, Arial, sans-serif">${item.value}</text>
+        <text x="${paddingX}" y="${centerY + 5 - (label.length - 1) * 8}" fill="#46607f" font-size="16" font-weight="500" font-family="Open Sans, Arial, sans-serif">${label.map((line, index) =>
+          `<tspan x="${paddingX}" dy="${index === 0 ? 0 : 16}">${escapeXml(line)}</tspan>`,
+        ).join('')}</text>
+        <rect x="${barX}" y="${centerY - barHeight / 2}" width="${barWidth}" height="${barHeight}" rx="${radius}" fill="#e7eef9" />
+        <rect x="${barX}" y="${centerY - barHeight / 2}" width="${filledWidth}" height="${barHeight}" rx="${radius}" fill="${escapeXml(item.color)}" />
+        ${showValues ? `<text x="${barX + barWidth + gap}" y="${centerY + 5}" fill="#46607f" font-size="16" font-weight="500" font-family="Open Sans, Arial, sans-serif">${item.value.toLocaleString('ru-RU', { maximumSignificantDigits: 17 })}</text>` : ''}
       `
     })
     .join('')
@@ -291,8 +327,7 @@ export const renderChartItemsToSvgDataUrl = (
   return toSvgDataUrl(`
     <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" fill="none">
       <rect width="${width}" height="${height}" rx="${cardRadius}" fill="#ffffff"/>
-      ${titleText}
-      ${subtitleText}
+      ${gridSvg}
       ${rowsSvg}
     </svg>
   `)
@@ -300,67 +335,83 @@ export const renderChartItemsToSvgDataUrl = (
 
 const renderMultiSeriesChartToSvgDataUrl = (
   categories: string[],
-  series: Array<{ name: string; color: string; values: number[] }>,
+  series: ChartSeries[],
+  maxValue: number,
+  divisions: number,
+  data: ChartData,
 ) => {
-  const width = 1180
-  const paddingLeft = 56
-  const paddingRight = 40
-  const paddingTop = 34
-  const paddingBottom = 86
-  const chartHeight = 320
-  const legendHeight = 34
-  const groupGap = 22
-  const maxValue = Math.max(1, ...series.flatMap((item) => item.values))
+  const paddingLeft = 58
+  const paddingRight = 20
+  const paddingTop = 22
+  const chartHeight = 240
+  const groupGap = 16
+  const minGroupWidth = Math.max(72, series.length * 18)
+  const gapsWidth = groupGap * Math.max(0, categories.length - 1)
+  const minChartWidth = paddingLeft + paddingRight + categories.length * minGroupWidth + gapsWidth
+  const legendItemWidths = series.map((item) => Math.max(85, item.name.length * 9 + 36))
+  const minLegendWidth = paddingLeft + paddingRight + legendItemWidths.reduce((sum, item) => sum + item, 0)
+  const width = Math.max(580, minChartWidth, minLegendWidth)
   const innerWidth = width - paddingLeft - paddingRight
-  const groupWidth = Math.max(72, (innerWidth - groupGap * Math.max(0, categories.length - 1)) / Math.max(categories.length, 1))
-  const barGap = 8
-  const barWidth = Math.max(10, (groupWidth - barGap * Math.max(0, series.length - 1)) / Math.max(series.length, 1))
-  const gridLines = 4
-
-  const gridSvg = Array.from({ length: gridLines + 1 }, (_, index) => {
-    const y = paddingTop + (chartHeight / gridLines) * index
-    const value = Math.round(maxValue - (maxValue / gridLines) * index)
+  const groupWidth = (innerWidth - gapsWidth) / Math.max(categories.length, 1)
+  const barGap = 6
+  const availableBarWidth = (groupWidth - barGap * Math.max(0, series.length - 1)) / Math.max(series.length, 1)
+  const barWidth = Math.min(availableBarWidth, data.barHeight ?? 18)
+  const axisBottom = paddingTop + chartHeight
+  const categoryLabels = categories.map((label) => wrapText(label, Math.floor(groupWidth / 8)))
+  const legendY = axisBottom + Math.max(1, ...categoryLabels.map((lines) => lines.length)) * 18 + 24
+  const gridSvg = divisions ? Array.from({ length: divisions + 1 }, (_, index) => {
+    const y = paddingTop + (chartHeight / divisions) * index
+    const value = formatTick(maxValue * ((divisions - index) / divisions))
     return `
-      <line x1="${paddingLeft}" y1="${y}" x2="${width - paddingRight}" y2="${y}" stroke="#e4edf9" stroke-width="1" />
-      <text x="${paddingLeft - 10}" y="${y + 5}" fill="#7a8ca6" font-size="14" text-anchor="end" font-family="Open Sans, Arial, sans-serif">${value}</text>
+      <line x1="${paddingLeft}" y1="${y}" x2="${width - paddingRight}" y2="${y}" stroke="#d3dfef" stroke-width="1" />
+      <text x="${paddingLeft - 8}" y="${y + 5}" fill="#46607f" font-size="16" text-anchor="end" font-family="Open Sans, Arial, sans-serif">${value}</text>
     `
-  }).join('')
+  }).join('') : ''
 
   const barsSvg = categories
-    .map((category, categoryIndex) => {
+    .map((_, categoryIndex) => {
       const groupX = paddingLeft + categoryIndex * (groupWidth + groupGap)
+      const centerX = groupX + groupWidth / 2
       const categoryBars = series
         .map((seriesItem, seriesIndex) => {
-          const value = seriesItem.values[categoryIndex] ?? 0
-          const height = Math.max(4, (value / maxValue) * chartHeight)
-          const x = groupX + seriesIndex * (barWidth + barGap)
-          const y = paddingTop + chartHeight - height
+          const value = seriesItem.values[categoryIndex]
+          if (value == null) {
+            return ''
+          }
+          const height = (value / maxValue) * chartHeight
+          const groupBarsWidth = series.length * barWidth + (series.length - 1) * barGap
+          const x = groupX + (groupWidth - groupBarsWidth) / 2 + seriesIndex * (barWidth + barGap)
+          const y = axisBottom - height
 
           return `
-            <rect x="${x}" y="${y}" width="${barWidth}" height="${height}" rx="8" fill="${escapeXml(seriesItem.color)}" />
+            <rect x="${x}" y="${y}" width="${barWidth}" height="${height}" rx="${data.barRadius ?? 3}" fill="${escapeXml(seriesItem.color)}" />
+            ${data.showValues === false ? '' : `<text x="${x + barWidth / 2}" y="${y - 5}" text-anchor="middle" fill="#46607f" font-size="13">${value.toLocaleString('ru-RU')}</text>`}
           `
         })
         .join('')
 
       return `
         ${categoryBars}
-        <text x="${groupX + groupWidth / 2}" y="${paddingTop + chartHeight + 24}" fill="#46607f" font-size="14" text-anchor="middle" font-family="Open Sans, Arial, sans-serif">${escapeXml(category)}</text>
+        <text x="${centerX}" y="${axisBottom + 20}" fill="#46607f" font-size="16" text-anchor="middle" font-family="Open Sans, Arial, sans-serif">${categoryLabels[categoryIndex].map((line, index) =>
+          `<tspan x="${centerX}" dy="${index === 0 ? 0 : 18}">${escapeXml(line)}</tspan>`,
+        ).join('')}</text>
       `
     })
     .join('')
 
+  let legendX = paddingLeft
   const legendSvg = series
     .map((seriesItem, index) => {
-      const x = paddingLeft + index * 180
-      const y = paddingTop + chartHeight + 50
+      const x = legendX
+      legendX += legendItemWidths[index]
       return `
-        <circle cx="${x}" cy="${y}" r="8" fill="${escapeXml(seriesItem.color)}" />
-        <text x="${x + 16}" y="${y + 5}" fill="#2e4669" font-size="15" font-family="Open Sans, Arial, sans-serif">${escapeXml(seriesItem.name)}</text>
+        <circle cx="${x}" cy="${legendY}" r="6" fill="${escapeXml(seriesItem.color)}" />
+        <text x="${x + 12}" y="${legendY + 5}" fill="#2e4669" font-size="16" font-family="Open Sans, Arial, sans-serif">${escapeXml(seriesItem.name)}</text>
       `
     })
     .join('')
 
-  const height = paddingTop + chartHeight + paddingBottom + legendHeight
+  const height = legendY + 22
 
   return toSvgDataUrl(`
     <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" fill="none">

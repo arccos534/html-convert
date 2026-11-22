@@ -46,7 +46,7 @@ export const createBlock = (type: BlockType): ArticleBlock => {
   const id = uuidv4()
 
   switch (type) {
-    case 'hero':
+    case 'hero': {
       const heroBackground = createDefaultHeroBackground()
 
       return {
@@ -68,6 +68,7 @@ export const createBlock = (type: BlockType): ArticleBlock => {
           align: 'left',
         },
       }
+    }
     case 'newsIntro':
       return {
         id,
@@ -160,7 +161,7 @@ export const createBlock = (type: BlockType): ArticleBlock => {
           label: '',
         },
       }
-    case 'button':
+    case 'button': {
       const buttonPreset = getButtonPreset('primary')
       return {
         id,
@@ -180,6 +181,7 @@ export const createBlock = (type: BlockType): ArticleBlock => {
           radius: buttonPreset.radius,
         },
       }
+    }
     case 'table':
       return {
         id,
@@ -225,7 +227,7 @@ export const createBlock = (type: BlockType): ArticleBlock => {
         data: {
           src: '',
           alt: 'Изображение новости',
-          caption: 'Подпись под изображением',
+          caption: '',
           textHtml: '',
           imageSide: 'left',
           width: 100,
@@ -267,6 +269,7 @@ export const createBlock = (type: BlockType): ArticleBlock => {
         type,
         spacing: createSpacing(),
         data: {
+          headingEnabled: false,
           title: 'Динамика публикаций',
           titleHtml: '<h3>Динамика публикаций</h3>',
           description: 'Количество опубликованных материалов по дням недели',
@@ -370,7 +373,7 @@ export const blockTemplates: BlockTemplate[] = [
   {
     type: 'image',
     name: 'Изображение',
-    description: 'Картинка с подписью и настройками',
+    description: 'Фото, подпись и основной текст',
     category: 'Media',
   },
 ]

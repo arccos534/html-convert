@@ -9,6 +9,7 @@ const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30
 const json = (res, statusCode, payload) => {
   res.statusCode = statusCode
   res.setHeader('Content-Type', 'application/json; charset=utf-8')
+  res.setHeader('Cache-Control', 'no-store')
   res.end(JSON.stringify(payload))
 }
 
@@ -55,7 +56,15 @@ const createWriteQueue = () => {
   }
 }
 
-const writeSerial = createWriteQueue()
+const writeJson = async (file, value) => {
+  const temp = `${file}.${crypto.randomUUID()}.tmp`
+  try {
+    await fs.writeFile(temp, JSON.stringify(value, null, 2), { mode: 0o600 })
+    await fs.rename(temp, file)
+  } finally {
+    await fs.rm(temp, { force: true })
+  }
+}
 
 const parseCookies = (cookieHeader = '') =>
   Object.fromEntries(
@@ -67,7 +76,7 @@ const parseCookies = (cookieHeader = '') =>
         const index = pair.indexOf('=')
         return index === -1
           ? [pair, '']
-          : [pair.slice(0, index), decodeURIComponent(pair.slice(index + 1))]
+          : [pair.slice(0, index), pair.slice(index + 1)]
       }),
   )
 
@@ -104,7 +113,7 @@ const verifyToken = (token, secret) => {
 
   const [payloadString, signature] = token.split('.')
   const expected = crypto.createHmac('sha256', secret).update(payloadString).digest('base64url')
-  if (signature !== expected) {
+  if (Buffer.byteLength(signature) !== expected.length || !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
     return null
   }
 
@@ -119,12 +128,12 @@ const verifyToken = (token, secret) => {
   }
 }
 
-const setSessionCookie = (res, token) => {
+const setSessionCookie = (res, token, secure) => {
   res.setHeader(
     'Set-Cookie',
     `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(
       SESSION_TTL_MS / 1000,
-    )}`,
+    )}${secure ? '; Secure' : ''}`,
   )
 }
 
@@ -145,10 +154,14 @@ const createStorage = (dataDir) => {
   const usersFile = path.join(dataDir, 'users.json')
   const workspacesFile = path.join(dataDir, 'workspaces.json')
 
-  const ensure = async () => {
+  let initialized
+  const ensure = () => initialized ??= (async () => {
     await ensureDataFile(usersFile, { users: [] })
     await ensureDataFile(workspacesFile, { workspaces: {} })
-  }
+  })().catch((error) => {
+    initialized = undefined
+    throw error
+  })
 
   const readUsers = async () => {
     await ensure()
@@ -157,7 +170,7 @@ const createStorage = (dataDir) => {
   }
 
   const writeUsers = async (value) =>
-    writeSerial(() => fs.writeFile(usersFile, JSON.stringify(value, null, 2), 'utf8'))
+    writeJson(usersFile, value)
 
   const readWorkspaces = async () => {
     await ensure()
@@ -166,7 +179,7 @@ const createStorage = (dataDir) => {
   }
 
   const writeWorkspaces = async (value) =>
-    writeSerial(() => fs.writeFile(workspacesFile, JSON.stringify(value, null, 2), 'utf8'))
+    writeJson(workspacesFile, value)
 
   return {
     readUsers,
@@ -198,10 +211,11 @@ const ensureUserWorkspaceState = (workspacesState, userId) => {
   return workspacesState.workspaces[userId]
 }
 
-export const createApiHandler = ({ dataDir, jwtSecret }) => {
+export const createApiHandler = ({ dataDir, jwtSecret, secureCookies = false }) => {
   const storage = createStorage(dataDir)
 
-  return async (req, res) => {
+  const serialize = createWriteQueue()
+  const handle = async (req, res, body) => {
     const requestUrl = new URL(req.url || '/', 'http://localhost')
     const pathname = requestUrl.pathname
 
@@ -217,7 +231,6 @@ export const createApiHandler = ({ dataDir, jwtSecret }) => {
     }
 
     if (pathname === '/api/auth/register' && req.method === 'POST') {
-      const body = await readBody(req)
       const username = String(body.username || '').trim()
       const password = String(body.password || '')
 
@@ -226,8 +239,8 @@ export const createApiHandler = ({ dataDir, jwtSecret }) => {
         return true
       }
 
-      if (password.length < 4) {
-        json(res, 400, { ok: false, error: 'Пароль должен быть не короче 4 символов.' })
+      if (password.length < 12 || password.length > 256) {
+        json(res, 400, { ok: false, error: 'Пароль должен содержать от 12 до 256 символов.' })
         return true
       }
 
@@ -253,13 +266,13 @@ export const createApiHandler = ({ dataDir, jwtSecret }) => {
       setSessionCookie(
         res,
         signToken({ userId: user.id, exp: Date.now() + SESSION_TTL_MS }, jwtSecret),
+        secureCookies,
       )
       json(res, 200, { ok: true, user: sanitizeUser(user) })
       return true
     }
 
     if (pathname === '/api/auth/login' && req.method === 'POST') {
-      const body = await readBody(req)
       const username = String(body.username || '').trim().toLowerCase()
       const password = String(body.password || '')
       const usersState = await storage.readUsers()
@@ -275,6 +288,7 @@ export const createApiHandler = ({ dataDir, jwtSecret }) => {
       setSessionCookie(
         res,
         signToken({ userId: user.id, exp: Date.now() + SESSION_TTL_MS }, jwtSecret),
+        secureCookies,
       )
       json(res, 200, { ok: true, user: sanitizeUser(user) })
       return true
@@ -300,7 +314,6 @@ export const createApiHandler = ({ dataDir, jwtSecret }) => {
     }
 
     if (pathname === '/api/autosave' && req.method === 'PUT') {
-      const body = await readBody(req)
       const workspacesState = await storage.readWorkspaces()
       const state = ensureUserWorkspaceState(workspacesState, user.id)
       state.autosave = body.document || null
@@ -318,7 +331,6 @@ export const createApiHandler = ({ dataDir, jwtSecret }) => {
     }
 
     if (pathname === '/api/workspaces' && req.method === 'POST') {
-      const body = await readBody(req)
       const workspacesState = await storage.readWorkspaces()
       const state = ensureUserWorkspaceState(workspacesState, user.id)
       const workspaceId = String(body.workspaceId || '').trim() || crypto.randomUUID()
@@ -351,5 +363,22 @@ export const createApiHandler = ({ dataDir, jwtSecret }) => {
     }
 
     return false
+  }
+
+  return async (req, res) => {
+    if (!req.url?.startsWith('/api/')) return false
+    const method = req.method
+    let body = {}
+    if (method === 'POST' || method === 'PUT') {
+      try {
+        body = await readBody(req)
+        if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error()
+      } catch {
+        json(res, 400, { ok: false, error: 'Некорректный запрос или превышен размер данных.' })
+        return true
+      }
+    }
+    const run = () => handle(req, res, body)
+    return method === 'GET' ? run() : serialize(run)
   }
 }

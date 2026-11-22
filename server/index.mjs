@@ -9,9 +9,13 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const ROOT_DIR = path.resolve(__dirname, '..')
 const DIST_DIR = path.join(ROOT_DIR, 'dist')
-const DATA_DIR = path.join(__dirname, 'data')
+const DATA_DIR = path.resolve(process.env.EDITOR_DATA_DIR || path.join(__dirname, 'data'))
 const PORT = Number(process.env.PORT || 8787)
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me'
+const JWT_SECRET = process.env.JWT_SECRET
+const HOST = process.env.HOST || '127.0.0.1'
+if (!JWT_SECRET || JWT_SECRET.length < 32) {
+  throw new Error('Укажите JWT_SECRET длиной не менее 32 символов.')
+}
 
 const mimeTypes = {
   '.css': 'text/css; charset=utf-8',
@@ -29,6 +33,7 @@ const mimeTypes = {
 const apiHandler = createApiHandler({
   dataDir: DATA_DIR,
   jwtSecret: JWT_SECRET,
+  secureCookies: process.env.SECURE_COOKIES !== 'false',
 })
 
 const sendFile = async (res, filePath) => {
@@ -61,7 +66,8 @@ const server = http.createServer(async (req, res) => {
     let filePath = path.join(DIST_DIR, pathname === '/' ? 'index.html' : pathname.slice(1))
     const normalized = path.normalize(filePath)
 
-    if (!normalized.startsWith(DIST_DIR)) {
+    const relativePath = path.relative(DIST_DIR, normalized)
+    if (relativePath === '..' || relativePath.startsWith(`..${path.sep}`) || path.isAbsolute(relativePath)) {
       res.statusCode = 403
       res.end('Forbidden')
       return
@@ -80,17 +86,18 @@ const server = http.createServer(async (req, res) => {
       await sendFile(res, path.join(DIST_DIR, 'index.html'))
     }
   } catch (error) {
+    console.error(error)
     res.statusCode = 500
     res.setHeader('Content-Type', 'application/json; charset=utf-8')
     res.end(
       JSON.stringify({
         ok: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
+        error: 'Внутренняя ошибка сервера.',
       }),
     )
   }
 })
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Primorye News Editor server started on http://0.0.0.0:${PORT}`)
+server.listen(PORT, HOST, () => {
+  console.log(`Primorye News Editor server started on http://${HOST}:${PORT}`)
 })

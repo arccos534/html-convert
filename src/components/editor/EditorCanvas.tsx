@@ -20,6 +20,7 @@ interface EditorCanvasProps {
   editable: boolean
   onSelectBlock: (id: string) => void
   onChangeBlock: (block: ArticleBlock) => void
+  onImportChart: (blockId: string, file: File) => Promise<void>
   onDeleteBlock: (id: string) => void
   onDuplicateBlock: (id: string) => void
   onReorderBlocks: (blocks: ArticleBlock[]) => void
@@ -31,6 +32,7 @@ export const EditorCanvas = ({
   editable,
   onSelectBlock,
   onChangeBlock,
+  onImportChart,
   onDeleteBlock,
   onDuplicateBlock,
   onReorderBlocks,
@@ -77,6 +79,7 @@ export const EditorCanvas = ({
               onDelete={() => onDeleteBlock(block.id)}
               onDuplicate={() => onDuplicateBlock(block.id)}
               onChange={onChangeBlock}
+              onImportChart={onImportChart}
             />
           ))}
         </SortableContext>

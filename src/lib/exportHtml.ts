@@ -1,3 +1,7 @@
+import { getChartImageSrc } from './chartImport'
+import { getImageLayout } from './imageLayout'
+import imageLayoutCss from './imageLayout.css?inline'
+import { hasMeaningfulHtml, sanitizeHtml } from './sanitizeHtml'
 import type {
   ArticleBlock,
   ArticleDocument,
@@ -161,107 +165,45 @@ const getQuoteFooterHtml = (data: {
   source: string
 }) => data.footerHtml || `<p>${escapeHtml([data.author, data.source].filter(Boolean).join(', '))}</p>`
 
-const hasMeaningfulHtml = (value?: string) =>
-  Boolean(value && value.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim())
-
 const getChartTitleHtml = (data: { titleHtml?: string; title: string }) =>
   data.titleHtml || `<h3>${escapeHtml(data.title)}</h3>`
 
-const getChartDescriptionHtml = (data: { descriptionHtml?: string; description: string }) =>
-  data.descriptionHtml || `<p>${escapeHtml(data.description)}</p>`
-
-const getChartSideTextHtml = (data: { textHtml?: string }) => data.textHtml || ''
-
-const getChartMax = (data: {
-  max: number
-  importSource?: 'manual' | 'excel' | 'excelVisual' | 'image'
-  autoMax?: boolean
-  items: Array<{ value: number }>
-}) =>
-  data.importSource === 'excel'
-    ? Math.max(1, ...data.items.map((item) => item.value))
-    : Math.max(1, data.max, ...data.items.map((item) => item.value))
-
 const renderImage = (data: ImageData) => {
-  const alignClass = `image-${data.align}`
-  const sideClass = `image-side-${data.imageSide || 'left'}`
   const hasText = hasMeaningfulHtml(data.textHtml)
-  const mediaHtml = data.src
-    ? `
+  const layout = getImageLayout(data, hasText)
+  if (!data.src.trim()) {
+    return hasText ? `<div class="image-copy-richtext rich-text">${data.textHtml}</div>` : ''
+  }
+  const mediaHtml = `
       <img
         src="${escapeAttr(data.src)}"
         alt="${escapeAttr(data.alt)}"
-        style="border-radius:${Math.max(0, data.radius)}px;${data.shadow ? 'box-shadow:0 14px 30px rgba(15,23,42,.16);' : ''}${data.withPadding ? 'padding:12px;background:#fff;' : ''}"
+        style="border-radius:${layout.radius}px;${data.shadow ? 'box-shadow:0 14px 30px rgba(15,23,42,.16);' : ''}${data.withPadding ? 'padding:12px;background:#fff;' : ''}"
       />
-    `
-    : '<div class="image-placeholder">Добавьте изображение</div>'
+  `
 
   return `
-    <div class="image-layout-shell ${alignClass}">
-      <div class="image-layout ${sideClass} ${hasText ? 'has-text' : 'no-text'}" style="--image-column-width:${Math.max(20, Math.min(100, data.width))}%;">
-        <figure class="image-block">
+    <div class="news-image-shell">
+      <div class="${layout.className}" style="--news-image-width:${layout.width}%;--news-image-gap:${layout.gap}px;">
+        <figure class="image-wrap">
           ${mediaHtml}
           ${data.caption ? `<figcaption>${escapeHtml(data.caption)}</figcaption>` : ''}
         </figure>
-        ${hasText ? `<div class="image-copy-richtext rich-text">${data.textHtml || ''}</div>` : ''}
+        ${hasText ? `<div class="image-copy image-copy-richtext rich-text">${data.textHtml || ''}</div>` : ''}
       </div>
     </div>
   `
 }
 
 const renderChart = (data: ChartData) => {
-  if (data.imageSrc) {
-    const chartAlign = data.align || 'left'
-    const hasSideText = hasMeaningfulHtml(data.textHtml)
-    return `
-      <section class="chart-block ${data.frameEnabled === false ? 'chart-frame-off' : ''}">
-        <header>
-          <div class="chart-title-richtext rich-text">${getChartTitleHtml(data)}</div>
-          ${getChartDescriptionHtml(data)}
-        </header>
-        <div class="chart-body">
-          <div class="chart-import-shell chart-import-shell-${chartAlign}">
-            <div class="chart-image-layout chart-image-side-${data.imageTextSide || 'right'} ${hasSideText ? 'has-text' : 'no-text'}">
-              <div class="chart-image-wrap" style="width:${Math.max(30, Math.min(100, data.imageWidth || 100))}%;">
-                <img class="chart-imported-image" src="${escapeAttr(data.imageSrc)}" alt="${escapeAttr(data.imageAlt || data.title || 'Диаграмма')}" />
-              </div>
-              ${hasSideText ? `<div class="chart-copy-richtext rich-text">${getChartSideTextHtml(data)}</div>` : ''}
-            </div>
-          </div>
-        </div>
-      </section>
-    `
-  }
-
-  const maxValue = getChartMax(data)
-  const showValues = data.showValues ?? true
-
-  const rows = data.items
-    .map((item) => {
-      const percent = Math.max(0, Math.min(100, (item.value / maxValue) * 100))
-      return `
-        <div class="chart-row">
-          <span class="chart-label">${escapeHtml(item.label)}</span>
-          <div class="chart-bar-wrap">
-            <div class="chart-bar" style="width:${percent}%;background:${escapeAttr(item.color)}"></div>
-          </div>
-          <span class="chart-value">${showValues ? item.value : ''}</span>
-        </div>
-      `
-    })
-    .join('')
-
-  return `
-    <section class="chart-block ${data.frameEnabled === false ? 'chart-frame-off' : ''}">
-      <header>
-        <div class="chart-title-richtext rich-text">${getChartTitleHtml(data)}</div>
-        ${getChartDescriptionHtml(data)}
-      </header>
-      <div class="chart-body">
-        ${rows}
-      </div>
-    </section>
-  `
+  const src = getChartImageSrc(data) || ''
+  return `<section class="chart-block ${data.frameEnabled === false ? 'chart-frame-off' : ''}">
+    ${data.headingEnabled === false ? '' : `<header><div class="chart-title-richtext rich-text">${getChartTitleHtml(data)}</div>${data.descriptionHtml || escapeHtml(data.description)}</header>`}
+    ${renderImage({ src, alt: data.imageAlt || 'Диаграмма', caption: '', textHtml: data.textHtml || '',
+      imageSide: data.imageTextSide === 'left' ? 'right' : 'left', textLayout: data.textLayout,
+      textGap: data.textGap, textPosition: data.textPosition, stackOrder: data.stackOrder,
+      width: data.imageWidth || 100, align: data.align, radius: 0, shadow: false, withPadding: false })}
+  </section>`
 }
 
 const renderBlock = (block: ArticleBlock): string => {
@@ -339,8 +281,10 @@ const renderBlock = (block: ArticleBlock): string => {
             .join('')}
         </section>
       `
-    case 'image':
-      return `<section class="news-block" style="${style}">${renderImage(block.data)}</section>`
+    case 'image': {
+      const image = renderImage(block.data)
+      return image ? `<section class="news-block" style="${style}">${image}</section>` : ''
+    }
     case 'stats':
       return `
         <section class="news-block stats-block" style="${style}">
@@ -754,67 +698,7 @@ export const exportCss = `
     font-weight: 700;
   }
 
-  .${EXPORT_ROOT_CLASS} .image-block {
-    margin: 0;
-  }
-
-  .${EXPORT_ROOT_CLASS} .image-layout-shell {
-    display: flex;
-    width: 100%;
-  }
-
-  .${EXPORT_ROOT_CLASS} .image-layout {
-    width: min(100%, 1100px);
-    display: grid;
-    grid-template-columns: minmax(220px, var(--image-column-width, 50%)) minmax(0, 1fr);
-    gap: 24px;
-    align-items: start;
-  }
-
-  .${EXPORT_ROOT_CLASS} .image-layout.no-text {
-    grid-template-columns: minmax(220px, var(--image-column-width, 50%));
-  }
-
-  .${EXPORT_ROOT_CLASS} .image-side-right {
-    grid-template-columns: minmax(0, 1fr) minmax(220px, var(--image-column-width, 50%));
-  }
-
-  .${EXPORT_ROOT_CLASS} .image-side-right .image-block {
-    order: 2;
-  }
-
-  .${EXPORT_ROOT_CLASS} .image-side-right .image-copy-richtext {
-    order: 1;
-  }
-
-  .${EXPORT_ROOT_CLASS} .image-left {
-    justify-content: flex-start;
-  }
-
-  .${EXPORT_ROOT_CLASS} .image-center {
-    justify-content: center;
-  }
-
-  .${EXPORT_ROOT_CLASS} .image-right {
-    justify-content: flex-end;
-  }
-
-  .${EXPORT_ROOT_CLASS} .image-block img {
-    display: block;
-    width: 100%;
-    max-width: 100%;
-    height: auto;
-  }
-
-  .${EXPORT_ROOT_CLASS} .image-block figcaption {
-    margin-top: 8px;
-    color: var(--muted);
-    font-size: 13px;
-  }
-
-  .${EXPORT_ROOT_CLASS} .image-copy-richtext {
-    min-width: 0;
-  }
+  ${imageLayoutCss.replaceAll('.news-image-context', `.${EXPORT_ROOT_CLASS}`)}
 
   .${EXPORT_ROOT_CLASS} .image-copy-richtext p,
   .${EXPORT_ROOT_CLASS} .image-copy-richtext ul,
@@ -1007,6 +891,10 @@ export const exportCss = `
     position: relative;
   }
 
+  .${EXPORT_ROOT_CLASS} .chart-bar-wrap.is-grid {
+    background-image: linear-gradient(to right, transparent calc(100% - 1px), #d9e6f8 calc(100% - 1px));
+  }
+
   .${EXPORT_ROOT_CLASS} .chart-bar {
     height: 100%;
     border-radius: 999px;
@@ -1122,14 +1010,10 @@ export const exportCss = `
       grid-template-columns: 1fr;
     }
 
-    .${EXPORT_ROOT_CLASS} .image-layout,
-    .${EXPORT_ROOT_CLASS} .chart-image-layout,
-    .${EXPORT_ROOT_CLASS} .image-side-right {
+    .${EXPORT_ROOT_CLASS} .chart-image-layout {
       grid-template-columns: 1fr;
     }
 
-    .${EXPORT_ROOT_CLASS} .image-side-right .image-block,
-    .${EXPORT_ROOT_CLASS} .image-side-right .image-copy-richtext,
     .${EXPORT_ROOT_CLASS} .chart-image-side-left .chart-image-wrap,
     .${EXPORT_ROOT_CLASS} .chart-image-side-left .chart-copy-richtext {
       order: initial;
@@ -1150,7 +1034,7 @@ export const exportCss = `
 `
 
 export const renderDocumentBlocksHtml = (blocks: ArticleBlock[]): string =>
-  blocks.map(renderBlock).join('\n')
+  sanitizeHtml(blocks.map(renderBlock).join('\n'))
 
 export const generateStandaloneHtml = (documentData: ArticleDocument): string => {
   const renderedBlocks = renderDocumentBlocksHtml(documentData.blocks)

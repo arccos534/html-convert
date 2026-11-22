@@ -5,10 +5,13 @@ export const createDemoDocument = (): ArticleDocument => {
   const hero = createBlock('hero')
   if (hero.type === 'hero') {
     hero.data.title = 'Новый визуальный редактор новостей запущен в тестовом режиме'
+    hero.data.titleHtml = `<h1>${hero.data.title}</h1>`
     hero.data.subtitle =
       'Команда редакции получила современный конструктор статей с экспортом в один HTML-файл для старого Bitrix.'
+    hero.data.subtitleHtml = `<p>${hero.data.subtitle}</p>`
     hero.data.backgroundEnabled = true
     hero.data.backgroundColorA = '#0f172a'
+    hero.data.textColor = '#ffffff'
     hero.data.backgroundColorB = '#1d4ed8'
     hero.data.backgroundAngle = 135
     hero.data.backgroundStopA = 0

@@ -1,4 +1,3 @@
-import { useMemo } from 'react'
 import { useRichTextToolbar } from '../blocks/RichTextToolbarContext'
 
 const fontSizes = [10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36]
@@ -68,20 +67,14 @@ const ToolbarButton = ({
 )
 
 export const GlobalRichTextToolbar = () => {
-  const { activeBinding, lastSelection, version, refreshToolbar } = useRichTextToolbar()
+  const { activeBinding, lastSelection, refreshToolbar } = useRichTextToolbar()
 
   const editor = activeBinding?.editor ?? null
   const isInactive = !editor
 
-  const currentFontFamily = useMemo(() => {
-    if (!editor) {
-      return fontOptions[0].value
-    }
-
-    const selectedFont = normalizeFontFamily(editor.getAttributes('textStyle').fontFamily)
-    const matched = fontOptions.find((option) => normalizeFontFamily(option.value) === selectedFont)
-    return matched?.value || fontOptions[0].value
-  }, [editor, version])
+  const fontFamily = normalizeFontFamily(editor?.getAttributes('textStyle').fontFamily)
+  const currentFontFamily = fontOptions.find((option) => normalizeFontFamily(option.value) === fontFamily)?.value
+    || fontOptions[0].value
 
   const selection = editor
     ? !editor.state.selection.empty
@@ -92,7 +85,7 @@ export const GlobalRichTextToolbar = () => {
   const selectionActionDisabled =
     isInactive || (Boolean(activeBinding?.requireSelectionForToolbarActions) && !selection)
 
-  const runToolbarCommand = (command: (chain: any) => void) => {
+  const runToolbarCommand = (command: (chain: import('@tiptap/core').ChainedCommands) => void) => {
     if (selectionActionDisabled || !editor) {
       return
     }
@@ -195,7 +188,7 @@ export const GlobalRichTextToolbar = () => {
           active={isUnderline}
         />
         <ToolbarButton
-          label="•"
+          label="Список"
           disabled={selectionActionDisabled}
           onClick={() => runToolbarCommand((chain) => chain.toggleBulletList())}
           active={isBulletList}

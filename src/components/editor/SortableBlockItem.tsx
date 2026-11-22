@@ -11,6 +11,7 @@ interface SortableBlockItemProps {
   onDelete: () => void
   onDuplicate: () => void
   onChange: (block: ArticleBlock) => void
+  onImportChart: (blockId: string, file: File) => Promise<void>
 }
 
 const blockNames: Record<ArticleBlock['type'], string> = {
@@ -39,6 +40,7 @@ export const SortableBlockItem = ({
   onDelete,
   onDuplicate,
   onChange,
+  onImportChart,
 }: SortableBlockItemProps) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: block.id })
@@ -85,6 +87,7 @@ export const SortableBlockItem = ({
         editable={editable}
         onSelect={onSelect}
         onChange={onChange}
+        onImportChart={onImportChart}
       />
     </article>
   )

@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import { RichTextToolbarProvider } from './components/blocks/RichTextToolbarContext'
 import { AuthModal } from './components/editor/AuthModal'
 import { BlockLibrary } from './components/editor/BlockLibrary'
 import { EditorCanvas } from './components/editor/EditorCanvas'
-import { HtmlModal } from './components/editor/HtmlModal'
 import { LivePreview } from './components/editor/LivePreview'
 import { SettingsPanel } from './components/editor/SettingsPanel'
 import { TopBar } from './components/editor/TopBar'
@@ -12,6 +11,7 @@ import { WorkspaceModal } from './components/editor/WorkspaceModal'
 import { blockTemplates, createBlock } from './data/blockFactory'
 import { createDemoDocument } from './data/demoArticle'
 import { copyToClipboard, downloadTextFile, loadDraftFromStorage, readFileAsText } from './lib/documentIO'
+import { importChartFile } from './lib/chartImport'
 import { generateStandaloneHtml } from './lib/exportHtml'
 import {
   deleteWorkspaceSnapshot,
@@ -101,13 +101,17 @@ const normalizeDocument = (value: unknown): ArticleDocument | null => {
         ...block,
         data: {
           src: String(data.src || ''),
-          alt: String(data.alt || 'Изображение новости'),
+          alt: String(data.alt ?? 'Изображение новости'),
           caption: String(data.caption || ''),
           textHtml: String(data.textHtml || ''),
           imageSide: data.imageSide === 'right' ? 'right' : 'left',
+          textLayout: data.textLayout === 'wrap' || data.textLayout === 'stack' ? data.textLayout : 'columns',
+          textGap: typeof data.textGap === 'number' ? data.textGap : undefined,
+          textPosition: data.textPosition === 'center' || data.textPosition === 'end' ? data.textPosition : 'start',
+          stackOrder: data.stackOrder === 'text-first' ? 'text-first' : 'image-first',
           width: Number(data.width || 100),
           align: (data.align as 'left' | 'center' | 'right') || 'center',
-          radius: Number(data.radius || 14),
+          radius: Number(data.radius ?? 14),
           shadow: Boolean(data.shadow),
           withPadding: Boolean(data.withPadding),
         },
@@ -148,7 +152,11 @@ function App() {
   const [authReady, setAuthReady] = useState(false)
   const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false)
   const [previewMode, setPreviewMode] = useState(false)
-  const [isHtmlModalOpen, setHtmlModalOpen] = useState(false)
+  const [savedDocument, setSavedDocument] = useState<ArticleDocument | null>(null)
+  const [failedDocument, setFailedDocument] = useState<ArticleDocument | null>(null)
+  const [retrySave, setRetrySave] = useState(0)
+  const saveQueue = useRef(Promise.resolve())
+  const pendingChartImports = useRef(new Map<string, symbol>())
   const [notice, setNotice] = useState('')
   const [history, setHistory] = useState<EditorSnapshot[]>([])
   const [future, setFuture] = useState<EditorSnapshot[]>([])
@@ -195,7 +203,7 @@ function App() {
 
         const legacyDraft = loadDraftFromStorage()
         const [autosave, workspaces] = await Promise.all([
-          loadUserAutosave().catch(() => null),
+          loadUserAutosave(),
           loadSavedWorkspaces().catch(() => []),
         ])
 
@@ -213,6 +221,7 @@ function App() {
           return
         }
 
+        setNotice('Не удалось загрузить черновик с сервера. Войдите повторно.')
         const demo = createDemoDocument()
         setCurrentUser(null)
         setSavedWorkspaces([])
@@ -238,26 +247,48 @@ function App() {
     }
 
     const timer = window.setTimeout(() => {
-      void saveUserAutosave(documentData).catch(() => {})
+      saveQueue.current = saveQueue.current.then(async () => {
+        try {
+          await saveUserAutosave(documentData)
+          setSavedDocument(documentData)
+          setFailedDocument(null)
+        } catch {
+          setFailedDocument(documentData)
+        }
+      })
     }, 500)
 
     return () => window.clearTimeout(timer)
-  }, [authReady, currentUser, documentData])
+  }, [authReady, currentUser, documentData, retrySave])
+
+  useEffect(() => {
+    if (!currentUser || savedDocument === documentData) return
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = true
+    }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [currentUser, documentData, savedDocument])
 
   const commitDocument = (
     nextDocumentData: ArticleDocument,
     nextSelectedBlockId: string | null = selectedBlockId,
   ) => {
-    setHistory((prev) => [...prev.slice(-(HISTORY_LIMIT - 1)), { documentData, selectedBlockId }])
-    setFuture([])
-    setDocumentData({
+    const previous = chartImportTarget.current.documentData
+    const updated = {
       ...nextDocumentData,
       updatedAt: new Date().toISOString(),
-    })
+    }
+    chartImportTarget.current.documentData = updated
+    setHistory((prev) => [...prev.slice(-(HISTORY_LIMIT - 1)), { documentData: previous, selectedBlockId }])
+    setFuture([])
+    setDocumentData(updated)
     setSelectedBlockId(nextSelectedBlockId)
   }
 
   const replaceDocument = (nextDocumentData: ArticleDocument, nextSelectedBlockId: string | null) => {
+    pendingChartImports.current.clear()
     setDocumentData(nextDocumentData)
     setSelectedBlockId(nextSelectedBlockId)
     setHistory([])
@@ -272,6 +303,7 @@ function App() {
 
     setHistory((prev) => prev.slice(0, -1))
     setFuture((prev) => [{ documentData, selectedBlockId }, ...prev.slice(0, HISTORY_LIMIT - 1)])
+    pendingChartImports.current.clear()
     setDocumentData(previous.documentData)
     setSelectedBlockId(previous.selectedBlockId)
   }
@@ -284,15 +316,49 @@ function App() {
 
     setFuture((prev) => prev.slice(1))
     setHistory((prev) => [...prev.slice(-(HISTORY_LIMIT - 1)), { documentData, selectedBlockId }])
+    pendingChartImports.current.clear()
     setDocumentData(next.documentData)
     setSelectedBlockId(next.selectedBlockId)
   }
 
   const updateBlock = (updated: ArticleBlock) => {
+    const latest = chartImportTarget.current.documentData
     commitDocument({
-      ...documentData,
-      blocks: documentData.blocks.map((block) => (block.id === updated.id ? updated : block)),
+      ...latest,
+      blocks: latest.blocks.map((block) => (block.id === updated.id ? updated : block)),
     })
+  }
+
+  const chartImportTarget = useRef({ documentData, updateBlock })
+  useLayoutEffect(() => {
+    chartImportTarget.current = { documentData, updateBlock }
+  })
+
+  const importChart = async (blockId: string, file: File) => {
+    const pending = pendingChartImports.current
+    const request = Symbol()
+    pending.set(blockId, request)
+
+    try {
+      const data = await importChartFile(file)
+      if (pending.get(blockId) !== request) {
+        return
+      }
+
+      const current = chartImportTarget.current
+      const block = current.documentData.blocks.find((item) => item.id === blockId)
+      if (block?.type === 'chart') {
+        current.updateBlock({ ...block, data: { ...block.data, ...data } })
+      }
+    } catch {
+      if (pending.get(blockId) === request) {
+        setNotice('Не удалось импортировать файл. Проверьте формат и содержимое.')
+      }
+    } finally {
+      if (pending.get(blockId) === request) {
+        pending.delete(blockId)
+      }
+    }
   }
 
   const addBlock = (type: BlockType) => {
@@ -334,25 +400,20 @@ function App() {
   }
 
   const saveDraft = async () => {
+    downloadTextFile(
+      `${slugify(documentData.title)}.json`,
+      JSON.stringify(documentData, null, 2),
+      'application/json',
+    )
     try {
       if (currentUser) {
         const nextWorkspaceId = await saveWorkspaceSnapshot(documentData, currentWorkspaceId)
         setCurrentWorkspaceId(nextWorkspaceId)
-        await Promise.all([refreshWorkspaces(), saveUserAutosave(documentData)])
+        await refreshWorkspaces()
       }
-
-      downloadTextFile(
-        `${slugify(documentData.title)}.json`,
-        JSON.stringify(documentData, null, 2),
-        'application/json',
-      )
-      setNotice(
-        currentUser
-          ? 'Работа сохранена в аккаунте, последняя версия обновлена и JSON скачан'
-          : 'JSON-файл скачан',
-      )
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'Не удалось сохранить работу')
+      setNotice(currentUser ? 'Работа сохранена, JSON скачан' : 'JSON-файл скачан')
+    } catch {
+      setNotice('Не удалось сохранить работу на сервере. Копия в JSON скачана.')
     }
   }
 
@@ -368,9 +429,6 @@ function App() {
 
       replaceDocument(parsed, parsed.blocks[0]?.id ?? null)
       setCurrentWorkspaceId(null)
-      if (currentUser) {
-        await saveUserAutosave(parsed)
-      }
       setNotice('JSON-черновик успешно импортирован')
     } catch {
       setNotice('Не удалось прочитать JSON-черновик')
@@ -394,7 +452,7 @@ function App() {
   const handleLogin = async (username: string, password: string) => {
     const account = await loginAccount(username, password)
     const [autosave, workspaces] = await Promise.all([
-      loadUserAutosave().catch(() => null),
+      loadUserAutosave(),
       loadSavedWorkspaces().catch(() => []),
     ])
 
@@ -415,15 +473,19 @@ function App() {
     setSavedWorkspaces([])
     replaceDocument(nextDocument, nextDocument.blocks[0]?.id ?? null)
     setCurrentWorkspaceId(null)
-    await saveUserAutosave(nextDocument)
     setNotice(`Аккаунт ${account.username} создан`)
   }
 
   const handleLogout = async () => {
     try {
+      await saveQueue.current
+      if (savedDocument !== documentData) {
+        await saveUserAutosave(documentData)
+      }
       await logoutAccount()
     } catch {
-      // Ignore logout transport failures and still reset local UI state.
+      setNotice('Не удалось выйти. Проверьте подключение и сохраните копию черновика.')
+      return
     }
 
     setCurrentUser(null)
@@ -438,9 +500,6 @@ function App() {
   const handleLoadWorkspace = async (workspace: SavedWorkspace) => {
     replaceDocument(workspace.document, workspace.document.blocks[0]?.id ?? null)
     setCurrentWorkspaceId(workspace.id)
-    if (currentUser) {
-      await saveUserAutosave(workspace.document)
-    }
     setWorkspaceModalOpen(false)
     setNotice(`Открыта работа: ${workspace.title}`)
   }
@@ -467,6 +526,11 @@ function App() {
           canUndo={history.length > 0}
           canRedo={future.length > 0}
           currentUsername={currentUser?.username ?? null}
+          saveStatus={failedDocument === documentData ? 'error' : savedDocument === documentData ? 'saved' : 'pending'}
+          onRetrySave={() => {
+            setFailedDocument(null)
+            setRetrySave((value) => value + 1)
+          }}
           theme={theme}
           onTitleChange={(title) => commitDocument({ ...documentData, title })}
           onUndo={undo}
@@ -483,9 +547,6 @@ function App() {
             const demo = createDemoDocument()
             replaceDocument(demo, demo.blocks[0]?.id ?? null)
             setCurrentWorkspaceId(null)
-            if (currentUser) {
-              void saveUserAutosave(demo)
-            }
             setNotice('Загружена демо-страница')
           }}
         />
@@ -503,6 +564,7 @@ function App() {
                 editable={!previewMode}
                 onSelectBlock={setSelectedBlockId}
                 onChangeBlock={updateBlock}
+                onImportChart={importChart}
                 onDeleteBlock={deleteBlock}
                 onDuplicateBlock={duplicateBlock}
                 onReorderBlocks={(blocks) => commitDocument({ ...documentData, blocks })}
@@ -515,20 +577,13 @@ function App() {
               block={selectedBlock}
               settings={documentData.settings}
               onUpdateBlock={updateBlock}
+              onImportChart={importChart}
               onUpdateSettings={(settings) => commitDocument({ ...documentData, settings })}
             />
           )}
         </div>
 
-        {notice && <div className="notice">{notice}</div>}
-
-        <HtmlModal
-          open={isHtmlModalOpen}
-          html={exportedHtml}
-          onClose={() => setHtmlModalOpen(false)}
-          onCopy={() => void copyHtml()}
-          onDownload={downloadHtml}
-        />
+        {notice && <div className="notice" role="status">{notice}</div>}
 
         <AuthModal
           open={authReady && !currentUser}

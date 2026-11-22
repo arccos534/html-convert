@@ -61,6 +61,8 @@ export const RichTextToolbarProvider = ({ children }: { children: ReactNode }) =
   return <RichTextToolbarContext.Provider value={value}>{children}</RichTextToolbarContext.Provider>
 }
 
+// This context and its consumer must share the same instance.
+// eslint-disable-next-line react-refresh/only-export-components
 export const useRichTextToolbar = () => {
   const context = useContext(RichTextToolbarContext)
   if (!context) {

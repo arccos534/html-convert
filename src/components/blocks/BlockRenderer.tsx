@@ -1,14 +1,9 @@
-import { useRef } from 'react'
+import { sanitizeHtml } from '../../lib/sanitizeHtml'
 import type { ArticleBlock } from '../../types'
-import { readImageAsDataUrl } from '../../lib/documentIO'
-import {
-  importSpreadsheetFile,
-  renderChartItemsToSvgDataUrl,
-  renderTableToSvgDataUrl,
-} from '../../lib/chartImport'
-import { importExactSpreadsheetVisual } from '../../lib/excelVisualImport'
+import { ChartBlockEditor } from './ChartBlockEditor'
 import { buildHeroBackground, getHeroTextColor } from '../../lib/heroBackground'
 import { resolveButtonStyle } from '../../lib/buttonStyle'
+import { ImageBlockEditor } from './ImageBlockEditor'
 import { RichTextEditor } from './RichTextEditor'
 
 interface BlockRendererProps {
@@ -17,6 +12,7 @@ interface BlockRendererProps {
   editable: boolean
   onSelect: () => void
   onChange: (block: ArticleBlock) => void
+  onImportChart: (blockId: string, file: File) => Promise<void>
 }
 
 const alignMap = {
@@ -44,24 +40,6 @@ const getQuoteHtml = (data: { html?: string; quote: string }) =>
 
 const getQuoteFooterHtml = (data: { footerHtml?: string; author: string; source: string }) =>
   data.footerHtml || `<p>${[data.author, data.source].filter(Boolean).join(', ')}</p>`
-
-const hasMeaningfulHtml = (value?: string) =>
-  Boolean(value && value.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim())
-
-const getChartTitleHtml = (data: { titleHtml?: string; title: string }) =>
-  data.titleHtml || `<h3>${data.title}</h3>`
-
-const getChartDescriptionHtml = (data: { descriptionHtml?: string; description: string }) =>
-  data.descriptionHtml || `<p>${data.description}</p>`
-
-const getChartSideTextHtml = (data: { textHtml?: string }) => data.textHtml || ''
-
-const getChartCombinedHtml = (data: {
-  titleHtml?: string
-  title: string
-  descriptionHtml?: string
-  description: string
-}) => `${getChartTitleHtml(data)}${getChartDescriptionHtml(data)}`
 
 const getHeroTitleHtml = (data: { titleHtml?: string; title: string }) =>
   data.titleHtml || `<h1>${data.title}</h1>`
@@ -91,140 +69,10 @@ const hexToRgba = (hex: string, alpha: number) => {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
-const parseChartTextHtml = (html: string) => {
-  if (typeof window === 'undefined') {
-    return {
-      titleHtml: `<h3>${html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() || 'Заголовок'}</h3>`,
-      title: html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() || 'Заголовок',
-      descriptionHtml: '<p></p>',
-      description: '',
-    }
-  }
-
-  const parser = new DOMParser()
-  const doc = parser.parseFromString(`<div>${html}</div>`, 'text/html')
-  const root = doc.body.firstElementChild
-  const elementNodes = Array.from(root?.children ?? [])
-  const titleElement = elementNodes[0] as HTMLElement | undefined
-  const descriptionHtml = elementNodes
-    .slice(1)
-    .map((node) => node.outerHTML)
-    .join('') || '<p></p>'
-
-  return {
-    titleHtml: titleElement?.outerHTML || '<h3>Заголовок</h3>',
-    title: titleElement?.textContent?.replace(/\s+/g, ' ').trim() || 'Заголовок',
-    descriptionHtml,
-    description: descriptionHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(),
-  }
-}
-
-const getChartMax = (data: {
-  max: number
-  importSource?: 'manual' | 'excel' | 'excelVisual' | 'image'
-  autoMax?: boolean
-  items: Array<{ value: number }>
-}) =>
-  data.importSource === 'excel'
-    ? Math.max(1, ...data.items.map((item) => item.value))
-    : Math.max(1, data.max, ...data.items.map((item) => item.value))
-
 const stopInlineEvent = (event: React.MouseEvent | React.FocusEvent) => {
   event.stopPropagation()
 }
 
-const applyImportedChartFile = async (
-  file: File,
-  block: Extract<ArticleBlock, { type: 'chart' }>,
-  onChange: (block: ArticleBlock) => void,
-) => {
-  const fileName = file.name.toLowerCase()
-  const isSpreadsheet = /\.(xlsx|xls|csv)$/i.test(fileName)
-  const isImageFile =
-    file.type.startsWith('image/') || /\.(svg|png|jpe?g|webp)$/i.test(fileName)
-
-  if (isSpreadsheet) {
-    const exactVisual = await importExactSpreadsheetVisual(file)
-    if (exactVisual) {
-      onChange({
-        ...block,
-        data: {
-          ...block.data,
-          importSource: 'excelVisual',
-          imageSrc: exactVisual,
-          imageAlt: file.name.replace(/\.[^.]+$/, '') || 'Диаграмма',
-          tableHeaders: [],
-          tableRows: [],
-        },
-      })
-      return
-    }
-
-    const imported = await importSpreadsheetFile(file)
-    if (!imported) {
-      window.alert('Не удалось распознать данные файла.')
-      return
-    }
-
-    if (imported.kind === 'chart') {
-      onChange({
-        ...block,
-        data: {
-          ...block.data,
-          importSource: 'excel',
-          imageSrc:
-            imported.svgDataUrl ||
-            renderChartItemsToSvgDataUrl(imported.items, {
-              title: block.data.title,
-              subtitle: block.data.description,
-            }),
-          imageAlt: file.name.replace(/\.[^.]+$/, '') || 'Диаграмма',
-          items: imported.items,
-          max: imported.max,
-          tableHeaders: [],
-          tableRows: [],
-        },
-      })
-      return
-    }
-
-    onChange({
-      ...block,
-      data: {
-        ...block.data,
-        importSource: 'excel',
-        imageSrc:
-          imported.svgDataUrl ||
-          renderTableToSvgDataUrl(imported.headers, imported.rows, {
-            title: block.data.title,
-            subtitle: block.data.description,
-          }),
-        imageAlt: file.name.replace(/\.[^.]+$/, '') || 'Таблица',
-        tableHeaders: imported.headers,
-        tableRows: imported.rows,
-      },
-    })
-    return
-  }
-
-  if (isImageFile) {
-    const src = await readImageAsDataUrl(file)
-    onChange({
-      ...block,
-      data: {
-        ...block.data,
-        importSource: 'image',
-        imageSrc: src,
-        imageAlt: file.name.replace(/\.[^.]+$/, '') || 'Диаграмма',
-        tableHeaders: [],
-        tableRows: [],
-      },
-    })
-    return
-  }
-
-  window.alert('Поддерживаются Excel, CSV и изображения.')
-}
 
 const InlineInput = ({
   value,
@@ -283,9 +131,9 @@ export const BlockRenderer = ({
   editable,
   onSelect,
   onChange,
+  onImportChart,
 }: BlockRendererProps) => {
   const canEdit = editable && selected
-  const chartColorInputsRef = useRef<Record<string, HTMLInputElement | null>>({})
 
   switch (block.type) {
     case 'hero':
@@ -348,11 +196,11 @@ export const BlockRenderer = ({
             <>
               <div
                 className="hero-richtext hero-title-richtext"
-                dangerouslySetInnerHTML={{ __html: getHeroTitleHtml(block.data) }}
+                dangerouslySetInnerHTML={{ __html: sanitizeHtml(getHeroTitleHtml(block.data)) }}
               />
               <div
                 className="hero-richtext hero-subtitle-richtext"
-                dangerouslySetInnerHTML={{ __html: getHeroSubtitleHtml(block.data) }}
+                dangerouslySetInnerHTML={{ __html: sanitizeHtml(getHeroSubtitleHtml(block.data)) }}
               />
             </>
           )}
@@ -546,11 +394,11 @@ export const BlockRenderer = ({
             <>
               <div
                 className="quote-richtext rich-text"
-                dangerouslySetInnerHTML={{ __html: getQuoteHtml(block.data) }}
+                dangerouslySetInnerHTML={{ __html: sanitizeHtml(getQuoteHtml(block.data)) }}
               />
               <div
                 className="quote-footer-richtext rich-text"
-                dangerouslySetInnerHTML={{ __html: getQuoteFooterHtml(block.data) }}
+                dangerouslySetInnerHTML={{ __html: sanitizeHtml(getQuoteFooterHtml(block.data)) }}
               />
             </>
           )}
@@ -613,7 +461,7 @@ export const BlockRenderer = ({
         </section>
       )
 
-    case 'button':
+    case 'button': {
       const buttonStyle = resolveButtonStyle(block.data)
       return (
         <section
@@ -660,6 +508,7 @@ export const BlockRenderer = ({
         </section>
       )
 
+    }
     case 'table':
       return (
         <section
@@ -763,7 +612,7 @@ export const BlockRenderer = ({
                 ) : (
                   <div
                     className="column-richtext rich-text"
-                    dangerouslySetInnerHTML={{ __html: item.html }}
+                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(item.html) }}
                   />
                 )}
               </article>
@@ -801,7 +650,7 @@ export const BlockRenderer = ({
                   <>
                     <div
                       className="card-richtext rich-text"
-                      dangerouslySetInnerHTML={{ __html: getCardHtml(item, index) }}
+                      dangerouslySetInnerHTML={{ __html: sanitizeHtml(getCardHtml(item, index)) }}
                     />
                   </>
                 )}
@@ -813,94 +662,13 @@ export const BlockRenderer = ({
 
     case 'image':
       return (
-        <section
-          className={`content-block ${selected ? 'is-selected' : ''}`}
-          style={{ marginTop: block.spacing.marginTop, marginBottom: block.spacing.marginBottom }}
-          onClick={onSelect}
-        >
-          {(() => {
-            const hasText = hasMeaningfulHtml(block.data.textHtml)
-
-            return (
-          <div className={`image-layout-shell image-${block.data.align}`}>
-            <div
-              className={`image-layout image-side-${block.data.imageSide || 'left'} ${hasText ? 'has-text' : 'no-text'}`}
-              style={{
-                ['--image-column-width' as string]: `${Math.max(20, Math.min(100, block.data.width))}%`,
-              }}
-            >
-              <figure className="image-wrap">
-                {block.data.src ? (
-                  <img
-                    src={block.data.src}
-                    alt={block.data.alt}
-                    style={{
-                      borderRadius: block.data.radius,
-                      boxShadow: block.data.shadow ? '0 14px 30px rgba(15,23,42,0.16)' : 'none',
-                      padding: block.data.withPadding ? 10 : 0,
-                      background: block.data.withPadding ? '#fff' : 'transparent',
-                    }}
-                  />
-                ) : (
-                  <div className="image-placeholder">Добавьте изображение</div>
-                )}
-                {canEdit ? (
-                  <InlineInput
-                    value={block.data.caption}
-                    className="image-caption-edit"
-                    placeholder="Подпись к изображению"
-                    onChange={(caption) => onChange({ ...block, data: { ...block.data, caption } })}
-                  />
-                ) : (
-                  block.data.caption && <figcaption>{block.data.caption}</figcaption>
-                )}
-              </figure>
-
-              {hasText ? (
-                <div className="image-copy">
-                  {canEdit ? (
-                    <div className="image-editor-shell">
-                      <RichTextEditor
-                        value={block.data.textHtml}
-                        align="left"
-                        paragraphGap={10}
-                        readOnly={!canEdit}
-                        requireSelectionForToolbarActions
-                        onChange={(textHtml) => onChange({ ...block, data: { ...block.data, textHtml } })}
-                      />
-                    </div>
-                  ) : (
-                    <div
-                      className="image-copy-richtext rich-text"
-                      dangerouslySetInnerHTML={{ __html: block.data.textHtml }}
-                    />
-                  )}
-                </div>
-              ) : canEdit ? (
-                <div className="image-copy image-copy-empty">
-                  <button
-                    type="button"
-                    className="settings-action-button"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      onChange({
-                        ...block,
-                        data: {
-                          ...block.data,
-                          textHtml: '<p>Новый текст рядом с изображением.</p>',
-                        },
-                      })
-                    }}
-                  >
-                    Добавить текст
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          </div>
-            )
-          })()}
-        </section>
+        <ImageBlockEditor
+          block={block}
+          selected={selected}
+          editable={editable}
+          onSelect={onSelect}
+          onChange={onChange}
+        />
       )
 
     case 'stats':
@@ -966,250 +734,8 @@ export const BlockRenderer = ({
         </section>
       )
 
-    case 'chart': {
-      const chartBlock = block as Extract<ArticleBlock, { type: 'chart' }>
-      const max = getChartMax(block.data)
-      const hasImportedChartImage = Boolean(block.data.imageSrc)
-      const chartAlign = block.data.align || 'left'
-      const showValues = block.data.showValues ?? true
-      const hasChartSideText = hasMeaningfulHtml(block.data.textHtml)
-      return (
-        <section
-          className={`content-block chart-block-shell ${block.data.frameEnabled === false ? 'chart-frame-off' : ''} ${selected ? 'is-selected' : ''}`}
-          style={{ marginTop: block.spacing.marginTop, marginBottom: block.spacing.marginBottom }}
-          onClick={onSelect}
-        >
-          <div className="chart-head">
-            {canEdit ? (
-              <div className="chart-editor-shell">
-                <div className="chart-text-toolbar-row">
-                  <label className="chart-import-inline">
-                    Импорт файла
-                    <input
-                      type="file"
-                      accept=".xlsx,.xls,.csv,.svg,.png,.jpg,.jpeg,.webp"
-                      onClick={(event) => event.stopPropagation()}
-                      onChange={async (event) => {
-                        const file = event.target.files?.[0]
-                        if (!file) {
-                          return
-                        }
-
-                        try {
-                          await applyImportedChartFile(file, chartBlock, onChange)
-                        } finally {
-                          event.target.value = ''
-                        }
-                      }}
-                    />
-                  </label>
-                </div>
-
-                <RichTextEditor
-                  value={getChartCombinedHtml(block.data)}
-                  align="left"
-                  paragraphGap={8}
-                  readOnly={!canEdit}
-                  requireSelectionForToolbarActions
-                  onChange={(html) => {
-                    const parsed = parseChartTextHtml(html)
-                    onChange({
-                      ...block,
-                      data: {
-                        ...block.data,
-                        title: parsed.title,
-                        titleHtml: parsed.titleHtml,
-                        description: parsed.description,
-                        descriptionHtml: parsed.descriptionHtml,
-                      },
-                    })
-                  }}
-                />
-              </div>
-            ) : (
-              <>
-                <div
-                  className="chart-title-richtext rich-text"
-                  dangerouslySetInnerHTML={{ __html: getChartTitleHtml(block.data) }}
-                />
-                <div
-                  className="chart-description-richtext rich-text"
-                  dangerouslySetInnerHTML={{ __html: getChartDescriptionHtml(block.data) }}
-                />
-              </>
-            )}
-          </div>
-          {false && (
-            <div className="chart-text-toolbar-row chart-import-toolbar-only">
-              <label className="chart-import-inline">
-                Импорт файла
-                <input
-                  type="file"
-                  accept=".xlsx,.xls,.csv,.svg,.png,.jpg,.jpeg,.webp"
-                  onClick={(event) => event.stopPropagation()}
-                  onChange={async (event) => {
-                    const file = event.target.files?.[0]
-                    if (!file) {
-                      return
-                    }
-
-                    try {
-                      await applyImportedChartFile(file, chartBlock, onChange)
-                    } finally {
-                      event.target.value = ''
-                    }
-                  }}
-                />
-              </label>
-            </div>
-          )}
-          {hasImportedChartImage ? (
-            <div className={`chart-import-shell chart-import-shell-${chartAlign}`}>
-              <div
-                className={`chart-image-layout chart-image-side-${block.data.imageTextSide || 'right'} ${hasChartSideText ? 'has-text' : 'no-text'}`}
-              >
-                <div
-                  className="chart-image-wrap"
-                  style={{ width: `${Math.max(30, Math.min(100, block.data.imageWidth || 100))}%` }}
-                >
-              <img
-                className="chart-imported-image"
-                src={block.data.imageSrc}
-                alt={block.data.imageAlt || block.data.title || 'Диаграмма'}
-              />
-            </div>
-                {hasChartSideText ? (
-                  <div className="chart-copy">
-                    {canEdit ? (
-                      <div className="chart-copy-editor-shell">
-                        <RichTextEditor
-                          value={getChartSideTextHtml(block.data)}
-                          align="left"
-                          paragraphGap={10}
-                          readOnly={!canEdit}
-                          requireSelectionForToolbarActions
-                          onChange={(textHtml) =>
-                            onChange({
-                              ...chartBlock,
-                              data: {
-                                ...chartBlock.data,
-                                textHtml,
-                              },
-                            })
-                          }
-                        />
-                      </div>
-                    ) : (
-                      <div
-                        className="chart-copy-richtext rich-text"
-                        dangerouslySetInnerHTML={{ __html: block.data.textHtml || '' }}
-                      />
-                    )}
-                  </div>
-                ) : canEdit ? (
-                  <div className="chart-copy chart-copy-empty">
-                    <button
-                      type="button"
-                      className="settings-action-button"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        onChange({
-                          ...chartBlock,
-                          data: {
-                            ...chartBlock.data,
-                            textHtml: '<p>Новый текст рядом с диаграммой.</p>',
-                          },
-                        })
-                      }}
-                    >
-                      Добавить текст
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          ) : (
-          <div className={`chart-import-shell chart-import-shell-${chartAlign}`}>
-          <div className="chart-grid">
-            {block.data.items.map((item, index) => {
-              const inputKey = `${block.id}-${index}`
-              return (
-                <div key={inputKey} className={`chart-row ${canEdit ? 'is-editable' : ''}`}>
-                  {canEdit ? (
-                    <>
-                      <input
-                        className="chart-label-input"
-                        value={item.label}
-                        onClick={(event) => event.stopPropagation()}
-                        onChange={(event) => {
-                          const items = [...block.data.items]
-                          items[index] = { ...items[index], label: event.target.value }
-                              onChange({ ...chartBlock, data: { ...chartBlock.data, items } })
-                        }}
-                      />
-                      <div className="chart-line">
-                        <button
-                          type="button"
-                          className="chart-fill-button"
-                          style={{
-                            width: `${Math.max(0, Math.min(100, (item.value / max) * 100))}%`,
-                            background: item.color,
-                          }}
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            chartColorInputsRef.current[inputKey]?.click()
-                          }}
-                        />
-                        <input
-                          ref={(node) => {
-                            chartColorInputsRef.current[inputKey] = node
-                          }}
-                          className="chart-color-input-hidden"
-                          type="color"
-                          value={item.color}
-                          onChange={(event) => {
-                                const items = [...chartBlock.data.items]
-                                items[index] = { ...items[index], color: event.target.value }
-                                onChange({ ...chartBlock, data: { ...chartBlock.data, items } })
-                          }}
-                        />
-                      </div>
-                      <input
-                        className="chart-value-input"
-                        type="number"
-                        value={item.value}
-                        onClick={(event) => event.stopPropagation()}
-                        onChange={(event) => {
-                              const items = [...chartBlock.data.items]
-                              items[index] = { ...items[index], value: Number(event.target.value) || 0 }
-                              onChange({ ...chartBlock, data: { ...chartBlock.data, items } })
-                        }}
-                      />
-                    </>
-                  ) : (
-                    <>
-                      <span>{item.label}</span>
-                      <div className="chart-line">
-                        <div
-                          className="chart-line-fill"
-                          style={{
-                            width: `${Math.max(0, Math.min(100, (item.value / max) * 100))}%`,
-                            background: item.color,
-                          }}
-                        />
-                      </div>
-                      <span>{showValues ? item.value : ''}</span>
-                    </>
-                  )}
-                </div>
-                )
-              })}
-          </div>
-          </div>
-          )}
-        </section>
-      )
-    }
+    case 'chart':
+      return <ChartBlockEditor block={block} selected={selected} editable={editable} onSelect={onSelect} onChange={onChange} onImportChart={onImportChart} />
 
     default:
       return null

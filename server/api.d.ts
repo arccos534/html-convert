@@ -13,6 +13,7 @@ export interface ApiHandlerResponse {
 export interface CreateApiHandlerOptions {
   dataDir: string
   jwtSecret: string
+  secureCookies?: boolean
 }
 
 export function createApiHandler(

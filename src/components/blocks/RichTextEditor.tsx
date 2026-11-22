@@ -1,3 +1,4 @@
+import { sanitizeHtml } from '../../lib/sanitizeHtml'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Color from '@tiptap/extension-color'
 import Link from '@tiptap/extension-link'
@@ -12,10 +13,12 @@ import { useRichTextToolbar } from './RichTextToolbarContext'
 
 interface RichTextEditorProps {
   value: string
+  ariaLabel?: string
+  placeholder?: string
   readOnly?: boolean
   showToolbar?: boolean
   requireSelectionForToolbarActions?: boolean
-  align: 'left' | 'center' | 'right'
+  align?: 'left' | 'center' | 'right'
   paragraphGap: number
   onChange: (html: string) => void
   onAlignChange?: (align: 'left' | 'center' | 'right') => void
@@ -47,6 +50,8 @@ const ToolbarButton = ({
 
 export const RichTextEditor = ({
   value,
+  ariaLabel,
+  placeholder,
   onChange,
   readOnly,
   showToolbar = false,
@@ -92,10 +97,12 @@ export const RichTextEditor = ({
 
   const editor = useEditor({
     extensions,
-    content: value,
+    content: sanitizeHtml(value),
     editable: !readOnly,
     editorProps: {
       attributes: {
+        ...(ariaLabel ? { role: 'textbox', 'aria-label': ariaLabel, 'aria-multiline': 'true' } : {}),
+        ...(placeholder ? { 'data-placeholder': placeholder, 'aria-placeholder': placeholder } : {}),
         class: 'rt-editor',
       },
     },
@@ -136,18 +143,16 @@ export const RichTextEditor = ({
     }
 
     if (value !== editor.getHTML()) {
-      editor.commands.setContent(value, { emitUpdate: false })
+      editor.commands.setContent(sanitizeHtml(value), { emitUpdate: false })
     }
   }, [editor, value])
 
   useEffect(() => {
-    if (!editor) {
+    if (!editor || !align) {
       return
     }
 
     editor.commands.setTextAlign(align)
-    const selection = editor.state.selection
-    setLastSelection(selection.empty ? null : { from: selection.from, to: selection.to })
   }, [align, editor])
 
   useEffect(() => {
@@ -185,7 +190,7 @@ export const RichTextEditor = ({
     return lastSelection
   }
 
-  const runToolbarCommand = (command: (chain: any) => void) => {
+  const runToolbarCommand = (command: (chain: import('@tiptap/core').ChainedCommands) => void) => {
     if (readOnly) {
       return
     }
@@ -283,7 +288,7 @@ export const RichTextEditor = ({
             active={editor.isActive('underline')}
           />
           <ToolbarButton
-            label="•"
+            label="Список"
             disabled={selectionActionDisabled}
             onClick={() => runToolbarCommand((chain) => chain.toggleBulletList())}
             active={editor.isActive('bulletList')}

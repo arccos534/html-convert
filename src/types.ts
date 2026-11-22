@@ -138,6 +138,10 @@ export interface ImageData {
   caption: string
   textHtml: string
   imageSide: 'left' | 'right'
+  textLayout?: 'columns' | 'wrap' | 'stack'
+  textGap?: number
+  textPosition?: 'start' | 'center' | 'end'
+  stackOrder?: 'image-first' | 'text-first'
   width: number
   align: TextAlign
   radius: number
@@ -164,13 +168,28 @@ export interface ChartItem {
 
 export type ChartType = 'bar' | 'pie'
 
+export interface ChartSeries {
+  name: string
+  color: string
+  values: Array<number | null>
+}
+
 export interface ChartData {
+  headingEnabled?: boolean
+  barRadius?: number
+  barHeight?: number
+  textLayout?: ImageData['textLayout']
+  textGap?: number
+  textPosition?: ImageData['textPosition']
+  stackOrder?: ImageData['stackOrder']
   title: string
   titleHtml?: string
   description: string
   descriptionHtml?: string
   textHtml?: string
   max: number
+  scaleDivisions?: number
+  spreadsheetChart?: { series?: ChartSeries[] }
   importSource?: 'manual' | 'excel' | 'excelVisual' | 'image'
   imageSrc?: string
   imageAlt?: string
