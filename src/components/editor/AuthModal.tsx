@@ -37,7 +37,7 @@ export const AuthModal = ({ onClose, onLogin, onRegister }: AuthModalProps) => {
         <header>
           <div className="modal-title-group">
             <h2 id="auth-title">Аккаунт редактора</h2>
-            <p>Войдите, чтобы открывать сохранённые работы с разных устройств.</p>
+            <p>Аккаунт даёт доступ к сохранённым статьям с других устройств.</p>
           </div>
           <button className="ui-button icon-button" type="button" aria-label="Закрыть" disabled={busy} onClick={onClose}>×</button>
         </header>

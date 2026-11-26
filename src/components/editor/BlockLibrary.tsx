@@ -9,12 +9,6 @@ const groups: { name: string; types: BlockType[] }[] = [
   { name: 'Данные', types: ['table', 'stats', 'chart'] },
 ]
 
-const glyphs: Record<BlockType, string> = {
-  hero: 'H', newsIntro: '▤', richText: '¶', image: '▧', quote: '“',
-  columns: '◫', cards: '▦', background: '▣', divider: '—', button: '↗',
-  important: '!', callout: 'i', table: '⊞', stats: '#', chart: '▥',
-}
-
 interface BlockLibraryProps {
   blocks: ArticleBlock[]
   selectedBlockId: string | null
@@ -47,9 +41,8 @@ export const BlockLibrary = ({ blocks, selectedBlockId, showOutline, onChangeSec
             {blocks.map((block, index) => (
               <li key={block.id}>
                 <button type="button" className="library-card outline-card" aria-current={selectedBlockId === block.id ? 'true' : undefined} onClick={() => onJumpToBlock(block.id)}>
-                  <span className="outline-index" aria-hidden="true">{index + 1}</span>
+                  <span className="outline-index" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
                   <strong>{blockNames[block.type]}</strong>
-                  <span className="library-add" aria-hidden="true">↗</span>
                 </button>
               </li>
             ))}
@@ -73,7 +66,6 @@ export const BlockLibrary = ({ blocks, selectedBlockId, showOutline, onChangeSec
                     <div className="library-grid">
                       {items.map((item) => (
                         <button key={item.type} type="button" className="library-card" title={item.description} onClick={() => onAddBlock(item.type)}>
-                          <span className="library-glyph" aria-hidden="true">{glyphs[item.type]}</span>
                           <strong>{item.name}</strong>
                           <span className="library-add" aria-hidden="true">+</span>
                         </button>

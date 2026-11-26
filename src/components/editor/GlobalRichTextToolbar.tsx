@@ -215,7 +215,7 @@ export const GlobalRichTextToolbar = () => {
         }
       }}>
         <summary className="ui-button" aria-label="Дополнительное форматирование" title="Дополнительное форматирование">
-          <span aria-hidden="true">···</span>
+          <span className="menu-caret" aria-hidden="true" />
         </summary>
         <div className="format-more-panel">
           <div className="format-more-actions">

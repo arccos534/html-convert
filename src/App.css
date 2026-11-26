@@ -1640,7 +1640,6 @@ th {
   color: #7b8da8;
 }
 
-html[data-theme='dark'] .settings-inline-card,
 html[data-theme='dark'] .column-item,
 html[data-theme='dark'] .card-item,
 html[data-theme='dark'] .stat-card,
@@ -1651,21 +1650,11 @@ html[data-theme='dark'] .content-block.chart-block-shell {
 
 html[data-theme='dark'] .inline-edit-input,
 html[data-theme='dark'] .inline-edit-textarea,
-html[data-theme='dark'] .settings-stack input,
-html[data-theme='dark'] .settings-stack textarea,
-html[data-theme='dark'] .settings-stack select,
 html[data-theme='dark'] .rt-inline-field input,
 html[data-theme='dark'] .rt-inline-field select {
   background: #0d1625;
   border-color: #2b3c5c;
   color: #edf3ff;
-}
-
-html[data-theme='dark'] .settings-item-head button,
-html[data-theme='dark'] .settings-action-button {
-  background: #14233a;
-  border-color: #294263;
-  color: #dbe7fb;
 }
 
 html[data-theme='dark'] .rt-btn.is-active {
@@ -1692,9 +1681,7 @@ html[data-theme='dark'] .news-intro-subtitle-edit,
 html[data-theme='dark'] .block-text-edit,
 html[data-theme='dark'] .stat-description,
 html[data-theme='dark'] .stat-label,
-html[data-theme='dark'] .chart-row span,
-html[data-theme='dark'] .settings-stack label,
-html[data-theme='dark'] .settings-tip {
+html[data-theme='dark'] .chart-row span {
   color: #a9bdd8;
 }
 

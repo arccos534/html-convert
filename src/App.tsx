@@ -703,10 +703,8 @@ function App() {
                     onDeleteBlock={deleteBlock}
                     onDuplicateBlock={duplicateBlock}
                     onReorderBlocks={(blocks) => commitDocument({ ...documentData, blocks })}
+                    onOpenLibrary={openLibrary}
                   />
-                  <div className="editor-tail">
-                    <button type="button" className="ui-button" onClick={openLibrary}>{documentData.blocks.length ? 'Добавить блок' : 'Выбрать первый блок'}</button>
-                  </div>
                 </div>
               </>
             )}

@@ -38,7 +38,6 @@ export const WorkspaceModal = ({
         <header>
           <div className="modal-title-group">
             <h2 id="workspace-title">Мои работы</h2>
-            <p>Сохраняйте статьи здесь, чтобы возвращаться к ним из аккаунта.</p>
           </div>
           <div className="modal-actions">
             <button className="ui-button icon-button" type="button" aria-label="Закрыть" disabled={saving} onClick={onClose}>
@@ -57,9 +56,7 @@ export const WorkspaceModal = ({
             </p>
           )}
           {workspaces.length === 0 ? (
-            <div className="empty-state workspace-empty-state">
-              <p>Сохранённых работ пока нет.</p>
-            </div>
+            <p className="workspace-empty-state">Сохранённых работ пока нет.</p>
           ) : (
             <div className="workspace-list">
               {workspaces.map((workspace) => (

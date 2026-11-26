@@ -26,6 +26,7 @@ interface EditorCanvasProps {
   onDeleteBlock: (id: string) => void
   onDuplicateBlock: (id: string) => void
   onReorderBlocks: (blocks: ArticleBlock[]) => void
+  onOpenLibrary: () => void
 }
 
 export const EditorCanvas = ({
@@ -38,6 +39,7 @@ export const EditorCanvas = ({
   onDeleteBlock,
   onDuplicateBlock,
   onReorderBlocks,
+  onOpenLibrary,
 }: EditorCanvasProps) => {
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -87,10 +89,11 @@ export const EditorCanvas = ({
           items={blocks.map((block) => block.id)}
           strategy={verticalListSortingStrategy}
         >
-          {blocks.map((block) => (
+          {blocks.map((block, index) => (
             <SortableBlockItem
               key={block.id}
               block={block}
+              position={index + 1}
               selected={selectedBlockId === block.id}
               editable={editable}
               onSelect={() => onSelectBlock(block.id)}
@@ -102,10 +105,18 @@ export const EditorCanvas = ({
           ))}
         </SortableContext>
       </DndContext>
-      {blocks.length === 0 && (
+      {blocks.length > 0 ? (
+        <div className="editor-tail">
+          <button type="button" className="ui-button add-block-button" onClick={onOpenLibrary}>
+            <span aria-hidden="true">+</span> Добавить блок
+          </button>
+        </div>
+      ) : (
         <div className="empty-state">
-          <strong>Начните с первого блока</strong>
-          <p>Добавьте заголовок, текст или изображение из библиотеки.</p>
+          <h2>В статье пока нет блоков</h2>
+          <button type="button" className="ui-button primary add-block-button" onClick={onOpenLibrary}>
+            <span aria-hidden="true">+</span> Добавить блок
+          </button>
         </div>
       )}
     </div>

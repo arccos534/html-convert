@@ -6,6 +6,7 @@ import { BlockRenderer } from '../blocks/BlockRenderer'
 
 interface SortableBlockItemProps {
   block: ArticleBlock
+  position: number
   selected: boolean
   editable: boolean
   onSelect: () => void
@@ -17,6 +18,7 @@ interface SortableBlockItemProps {
 
 export const SortableBlockItem = ({
   block,
+  position,
   selected,
   editable,
   onSelect,
@@ -31,7 +33,6 @@ export const SortableBlockItem = ({
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.7 : 1,
   }
 
   return (
@@ -39,12 +40,13 @@ export const SortableBlockItem = ({
       ref={setNodeRef}
       id={`block-${block.id}`}
       style={style}
-      className={`canvas-item ${selected ? 'is-selected' : ''}`}
+      className={`canvas-item${selected ? ' is-selected' : ''}${isDragging ? ' is-dragging' : ''}`}
       onClick={onSelect}
       onFocusCapture={onSelect}
     >
       {editable && (
         <header className="canvas-item-header">
+          <span className="block-position" aria-hidden="true">{String(position).padStart(2, '0')}</span>
           <button
             type="button"
             ref={setActivatorNodeRef}

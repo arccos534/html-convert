@@ -2291,11 +2291,11 @@ export const SettingsPanel = ({
       </div>
       {block || showPageSettings ? (
         <div className="inspector-fields">
-          {block && <h3 className="inspector-title">{blockNames[block.type]}</h3>}
+          {!showPageSettings && block && <h3 className="inspector-title">{blockNames[block.type]}</h3>}
           {renderBlockSettings()}
           {renderCommonSpacing()}
         </div>
-      ) : <p className="library-empty">Выберите блок на холсте.</p>}
+      ) : <p className="inspector-empty">Выберите блок на холсте, чтобы открыть его параметры.</p>}
     </aside>
   )
 }

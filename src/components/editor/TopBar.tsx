@@ -53,10 +53,9 @@ export const TopBar = ({
   return (
     <header className="topbar">
       <div className="topbar-brand">
-        <span className="brand-mark" aria-hidden="true"><i /></span>
+        <span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>
         <div className="brand-copy">
           <strong>HTML Convert</strong>
-          <span>Редактор для Bitrix</span>
         </div>
       </div>
 
@@ -68,18 +67,6 @@ export const TopBar = ({
           placeholder="Название черновика"
           aria-label="Название черновика"
         />
-        <div className={`autosave-status is-${saveStatus}`}>
-          <span role="status">
-            {saveStatus === 'saved' ? (currentUsername ? 'Сохранено в аккаунте' : 'Сохранено в браузере')
-              : saveStatus === 'pending' ? 'Сохранение…' : 'Не удалось сохранить'}
-          </span>
-          {saveStatus === 'error' && <button type="button" onClick={onRetrySave}>Повторить</button>}
-        </div>
-      </div>
-
-      <div className="topbar-mode segmented" role="group" aria-label="Режим работы">
-        <button type="button" aria-pressed={!previewMode} onClick={() => onChangeMode(false)}>Редактор</button>
-        <button type="button" aria-pressed={previewMode} onClick={() => onChangeMode(true)}>Предпросмотр</button>
       </div>
 
       {!previewMode && (
@@ -89,10 +76,20 @@ export const TopBar = ({
         </div>
       )}
 
+      <div className={`autosave-status is-${saveStatus}`}>
+        <span role="status">
+          {saveStatus === 'saved' ? (currentUsername ? 'Сохранено в аккаунте' : 'Сохранено в браузере')
+            : saveStatus === 'pending' ? 'Сохранение…' : 'Не удалось сохранить'}
+        </span>
+        {saveStatus === 'error' && <button type="button" onClick={onRetrySave}>Повторить</button>}
+      </div>
+
+      <div className="topbar-mode segmented" role="group" aria-label="Режим работы">
+        <button type="button" aria-pressed={!previewMode} onClick={() => onChangeMode(false)}>Редактор</button>
+        <button type="button" aria-pressed={previewMode} onClick={() => onChangeMode(true)}>Предпросмотр</button>
+      </div>
+
       <div className="topbar-actions">
-        <button className="account-button ui-button" type="button" onClick={onOpenAccount}>
-          {currentUsername ? 'Мои работы' : 'Войти'}
-        </button>
         <button className="ui-button primary export-button" type="button" aria-label="Копировать HTML" onClick={onCopyHtml}>
           <span className="ui-icon icon-copy" aria-hidden="true" />
           <span><span className="export-verb">Копировать </span>HTML</span>
@@ -103,18 +100,20 @@ export const TopBar = ({
             closeMenu()
           }
         }}>
-          <summary className="ui-button icon-button" aria-label="Ещё действия" title="Ещё действия">···</summary>
+          <summary className="ui-button" aria-label="Меню действий">Меню <span className="menu-caret" aria-hidden="true" /></summary>
           <div className="topbar-more-panel" onClick={(event) => {
             if (event.target instanceof Element && event.target.closest('button')) closeMenu()
           }}>
+            <button type="button" onClick={onNewArticle}>Новая статья</button>
+            <button type="button" onClick={onOpenExample}>Открыть пример</button>
+            <div className="menu-divider" />
             <button type="button" onClick={onDownloadHtml}>Скачать HTML</button>
             <button type="button" onClick={onDownloadDraft}>Скачать черновик JSON</button>
             <button type="button" onClick={() => fileInputRef.current?.click()}>Открыть черновик JSON</button>
             <div className="menu-divider" />
-            <button type="button" onClick={onNewArticle}>Новая статья</button>
-            <button type="button" onClick={onOpenExample}>Открыть пример</button>
-            <div className="menu-divider" />
             <button type="button" onClick={onToggleTheme}>{theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}</button>
+            <div className="menu-divider" />
+            <button type="button" onClick={onOpenAccount}>{currentUsername ? 'Мои работы' : 'Войти'}</button>
             {currentUsername && <button type="button" onClick={onLogout}>Выйти из аккаунта</button>}
           </div>
         </details>
