@@ -5,6 +5,8 @@ import { getImageLayout, getImagePhotos } from '../../lib/imageLayout'
 import { hasMeaningfulHtml, sanitizeHtml } from '../../lib/sanitizeHtml'
 import type { ImageBlock, ImageData, ImagePhoto } from '../../types'
 import { RichTextEditor } from './RichTextEditor'
+import { FormattedTextField } from './FormattedTextField'
+import { getFormattedTextHtml } from '../../lib/formattedText'
 import '../../lib/imageLayout.css'
 import '../../lib/imageCollage.css'
 
@@ -119,7 +121,7 @@ export const ImageBlockEditor = ({ block, selected, editable, onSelect, onChange
   const moveCaptionToText = () => {
     const paragraph = document.createElement('p')
     paragraph.textContent = data.caption.trim()
-    update({ caption: '', textHtml: paragraph.outerHTML })
+    update({ caption: '', captionHtml: undefined, textHtml: paragraph.outerHTML })
   }
 
   const renderPhoto = ({ src, alt }: ImagePhoto) => (
@@ -253,14 +255,10 @@ export const ImageBlockEditor = ({ block, selected, editable, onSelect, onChange
               </div>
             ) : hasImage ? renderPhoto(photos[0]) : <div className="image-placeholder">Место для фото</div>)}
             {editing && !chartMedia ? (
-              <input
-                className="inline-edit-input image-caption-edit"
-                aria-label={layout.collage ? 'Подпись к коллажу' : 'Подпись под фото'}
-                placeholder={layout.collage ? 'Подпись к коллажу' : 'Подпись под фото'}
-                value={data.caption}
-                onChange={(event) => update({ caption: event.target.value })}
-              />
-            ) : !chartMedia && data.caption && <figcaption>{data.caption}</figcaption>}
+              <div className="image-caption-edit"><FormattedTextField value={data.caption} html={data.captionHtml} tag="span"
+                ariaLabel={layout.collage ? 'Подпись к коллажу' : 'Подпись под фото'} readOnly={!editing}
+                onChange={(caption, captionHtml) => update({ caption, captionHtml })} /></div>
+            ) : !chartMedia && data.caption && <figcaption dangerouslySetInnerHTML={{ __html: getFormattedTextHtml(data.caption, data.captionHtml, 'span') }} />}
           </figure>
           {editing ? (
             <div className={`image-copy ${hasText ? '' : 'image-copy-empty'}`}>

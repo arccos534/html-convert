@@ -483,6 +483,17 @@ details[open] > summary .menu-caret { transform: translateY(2px) rotate(225deg);
 .image-photo-manager input { flex: 1 1 120px; min-width: 0; font-size: 13px; }
 .image-photo-actions { display: flex; flex-wrap: wrap; gap: 4px; }
 .image-photo-actions button { padding: 3px 7px; font-size: 12px; }
+.data-block-tools { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; font-size: 12px; }
+.data-block-tools button:disabled { opacity: .45; cursor: default; }
+.table-editor .rt-wrapper { border: 0; border-radius: 0; }
+.table-editor .rt-editor { min-width: 70px; padding: 5px; }
+.table-editor .rt-editor p { margin: 0; }
+.stat-card .rt-wrapper { border: 0; background: transparent; }
+.stat-card .rt-editor { padding: 3px; }
+.stat-card .rt-editor p { margin: 0; }
+@container (max-width: 580px) {
+  .editor-canvas .stats-grid { grid-template-columns: minmax(0, 1fr) !important; }
+}
 .panel-right .settings-item-head button:disabled { color: var(--muted); opacity: .55; }
 .panel-right .chart-import-button:focus-within { outline: 2px solid var(--accent-line); outline-offset: 2px; }
 .panel-right .rgb-preview { border-color: var(--control-line); border-radius: 3px; box-shadow: none; }

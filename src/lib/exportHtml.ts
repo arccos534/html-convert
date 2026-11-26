@@ -17,6 +17,7 @@ import type {
 import { buildColumnsStyle } from './columns'
 import { buildHeroBackground, getHeroTextColor } from './heroBackground'
 import { resolveButtonStyle } from './buttonStyle'
+import { getFormattedTextHtml, getFormattedTextInnerHtml } from './formattedText'
 
 export const EXPORT_ROOT_CLASS = 'bitrix-news-builder-content'
 
@@ -75,7 +76,7 @@ const renderButton = (data: ButtonData) => {
   return `
     <div class="btn-row" style="justify-content:${alignToFlex(data.align)};">
       <a class="news-btn" href="${escapeAttr(data.url)}" target="_blank" rel="noreferrer noopener" style="background:${escapeAttr(buttonStyle.backgroundColor)};color:${escapeAttr(buttonStyle.textColor)};border:${buttonStyle.borderWidth}px solid ${escapeAttr(buttonStyle.borderColor)};border-radius:${buttonStyle.radius}px;font-size:${buttonStyle.fontSize}px;padding:${buttonStyle.paddingY}px ${buttonStyle.paddingX}px;">
-        ${escapeHtml(data.label)}
+        ${getFormattedTextInnerHtml(data.label, data.labelHtml)}
       </a>
     </div>
   `
@@ -89,7 +90,7 @@ const renderDivider = (data: DividerData) => {
   }
 
   const labelHtml = data.label
-    ? `<span class="divider-label">${escapeHtml(data.label)}</span>`
+    ? `<span class="divider-label">${getFormattedTextInnerHtml(data.label, data.labelHtml)}</span>`
     : ''
 
   return `
@@ -103,19 +104,19 @@ const renderDivider = (data: DividerData) => {
 
 const renderTable = (data: TableData) => {
   const headerHtml = data.headers
-    .map((header) => `<th>${escapeHtml(header)}</th>`)
+    .map((header, index) => `<th>${getFormattedTextHtml(header, data.headersHtml?.[index], 'span')}</th>`)
     .join('')
 
   const rowsHtml = data.rows
     .map(
-      (row) =>
-        `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>`,
+      (row, rowIndex) =>
+        `<tr>${row.map((cell, columnIndex) => `<td>${getFormattedTextHtml(cell, data.rowsHtml?.[rowIndex]?.[columnIndex], 'span')}</td>`).join('')}</tr>`,
     )
     .join('')
 
   return `
     <div class="table-wrap">
-      ${data.caption ? `<p class="table-caption">${escapeHtml(data.caption)}</p>` : ''}
+      ${data.caption ? `<div class="table-caption">${getFormattedTextHtml(data.caption, data.captionHtml, 'span')}</div>` : ''}
       <table>
         <thead>
           <tr>${headerHtml}</tr>
@@ -192,7 +193,7 @@ const renderImage = (data: ImageData) => {
       <div class="${layout.className}" style="--news-image-width:${layout.width}%;--news-image-gap:${layout.gap}px;">
         <figure class="image-wrap">
           ${mediaHtml}
-          ${data.caption ? `<figcaption>${escapeHtml(data.caption)}</figcaption>` : ''}
+          ${data.caption ? `<figcaption>${getFormattedTextInnerHtml(data.caption, data.captionHtml)}</figcaption>` : ''}
         </figure>
         ${hasText ? `<div class="image-copy image-copy-richtext rich-text">${data.textHtml || ''}</div>` : ''}
       </div>
@@ -203,7 +204,7 @@ const renderImage = (data: ImageData) => {
 const renderChart = (data: ChartData) => {
   const src = getChartImageSrc(data) || ''
   return `<section class="chart-block ${data.frameEnabled === false ? 'chart-frame-off' : ''}">
-    ${data.headingEnabled === false ? '' : `<header><div class="chart-title-richtext rich-text">${getChartTitleHtml(data)}</div>${data.descriptionHtml || escapeHtml(data.description)}</header>`}
+    ${data.headingEnabled === false ? '' : `<header><div class="chart-title-richtext rich-text">${sanitizeHtml(getChartTitleHtml(data))}</div>${getFormattedTextHtml(data.description, data.descriptionHtml, 'p')}</header>`}
     ${renderImage({ src, alt: data.imageAlt || 'Диаграмма', caption: '', textHtml: data.textHtml || '',
       imageSide: data.imageTextSide === 'left' ? 'right' : 'left', textLayout: data.textLayout,
       textGap: data.textGap, textPosition: data.textPosition, stackOrder: data.stackOrder,
@@ -225,8 +226,8 @@ const renderBlock = (block: ArticleBlock): string => {
     case 'newsIntro':
       return `
         <section class="news-block news-intro" style="${style}text-align:${block.data.align};">
-          <h2>${escapeHtml(block.data.title)}</h2>
-          <p class="subtitle">${escapeHtml(block.data.subtitle)}</p>
+          <div class="news-intro-title">${getFormattedTextHtml(block.data.title, block.data.titleHtml, 'h2')}</div>
+          <div class="subtitle">${getFormattedTextHtml(block.data.subtitle, block.data.subtitleHtml, 'p')}</div>
           <div class="lead">${block.data.leadHtml}</div>
         </section>
       `
@@ -239,15 +240,15 @@ const renderBlock = (block: ArticleBlock): string => {
     case 'callout':
       return `
         <aside class="news-block callout tone-${block.data.tone}" style="${style}">
-          <h3>${escapeHtml(block.data.title)}</h3>
-          <p>${escapeHtml(block.data.content)}</p>
+          <div class="formatted-heading">${getFormattedTextHtml(block.data.title, block.data.titleHtml, 'h3')}</div>
+          <div>${getFormattedTextHtml(block.data.content, block.data.contentHtml, 'p')}</div>
         </aside>
       `
     case 'important':
       return `
         <aside class="news-block important" style="${style}border-color:${escapeAttr(block.data.borderColor || block.data.accentColor || '#f7c476')};background:${escapeAttr(hexToRgba(block.data.accentColor || '#f7c476', 0.22))};border-radius:${Math.max(0, block.data.radius ?? 14)}px;">
-          <h3>${escapeHtml(block.data.title)}</h3>
-          <p>${escapeHtml(block.data.content)}</p>
+          <div class="formatted-heading">${getFormattedTextHtml(block.data.title, block.data.titleHtml, 'h3')}</div>
+          <div>${getFormattedTextHtml(block.data.content, block.data.contentHtml, 'p')}</div>
         </aside>
       `
     case 'quote':
@@ -260,7 +261,7 @@ const renderBlock = (block: ArticleBlock): string => {
     case 'background':
       return `
         <section class="news-block bg-block" style="${style}background:${escapeAttr(block.data.background)};color:${escapeAttr(block.data.textColor)};">
-          <h3>${escapeHtml(block.data.title)}</h3>
+          <div class="formatted-heading">${getFormattedTextHtml(block.data.title, block.data.titleHtml, 'h3')}</div>
           <div>${block.data.contentHtml}</div>
         </section>
       `
@@ -293,15 +294,15 @@ const renderBlock = (block: ArticleBlock): string => {
     case 'stats':
       return `
         <section class="news-block stats-block" style="${style}">
-          <h3>${escapeHtml(block.data.title)}</h3>
-          <div class="stats-grid">
+          <div class="formatted-heading">${getFormattedTextHtml(block.data.title, block.data.titleHtml, 'h3')}</div>
+          <div class="stats-grid"${block.data.columns ? ` style="grid-template-columns:repeat(${Math.min(4, Math.max(1, block.data.columns))},minmax(0,1fr))"` : ''}>
             ${block.data.items
               .map(
                 (item) => `
               <article class="stats-item">
-                <p class="stats-value">${escapeHtml(item.value)}</p>
-                <p class="stats-label">${escapeHtml(item.label)}</p>
-                <p class="stats-description">${escapeHtml(item.description)}</p>
+                <div class="stats-value">${getFormattedTextHtml(item.value, item.valueHtml, 'span')}</div>
+                <div class="stats-label">${getFormattedTextHtml(item.label, item.labelHtml, 'span')}</div>
+                <div class="stats-description">${getFormattedTextHtml(item.description, item.descriptionHtml, 'span')}</div>
               </article>
             `,
               )
@@ -1012,7 +1013,7 @@ export const exportCss = `
     .${EXPORT_ROOT_CLASS} .cols-2,
     .${EXPORT_ROOT_CLASS} .cols-3,
     .${EXPORT_ROOT_CLASS} .stats-grid {
-      grid-template-columns: 1fr;
+      grid-template-columns: 1fr !important;
     }
 
     .${EXPORT_ROOT_CLASS} .chart-image-layout {

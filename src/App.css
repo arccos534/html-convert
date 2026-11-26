@@ -347,7 +347,7 @@ button {
   gap: 10px;
 }
 
-.divider span {
+.divider > span {
   border-top: 1px solid #cad8ec;
   flex: 1;
 }
@@ -360,6 +360,7 @@ button {
 }
 
 .divider-label-edit {
+  min-width: 100px;
   max-width: 260px;
   text-align: center;
   font-size: 12px;
@@ -368,11 +369,11 @@ button {
   color: #64748f;
 }
 
-.divider-dashed span {
+.divider-dashed > span {
   border-top-style: dashed;
 }
 
-.divider-thick span {
+.divider-thick > span {
   border-top-width: 2px;
 }
 
@@ -1562,6 +1563,17 @@ th {
   background: var(--surface);
   overflow: hidden;
 }
+
+.formatted-text-field .rt-wrapper { border: 0; border-radius: 0; background: transparent; overflow: visible; }
+.formatted-text-field .rt-editor { padding: 0; }
+.formatted-text-field .rt-editor > :last-child { margin-bottom: 0; }
+.formatted-text-field .rt-editor h1,
+.formatted-text-field .rt-editor h2,
+.formatted-text-field .rt-editor h3,
+.formatted-text-field .rt-editor p { font: inherit; color: inherit; }
+.formatted-text-field .rt-editor h1 { font-size: 2em; font-weight: 700; }
+.formatted-text-field .rt-editor h2 { font-size: 1.5em; font-weight: 700; }
+.formatted-text-field .rt-editor h3 { font-size: 1.17em; font-weight: 700; }
 
 .rt-toolbar {
   display: flex;

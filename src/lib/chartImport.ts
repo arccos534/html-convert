@@ -2,6 +2,7 @@ import type { WorkBook } from 'xlsx'
 import type { ChartData, ChartItem, ChartSeries } from '../types'
 import { getChartScaleDivisions } from './chartScale'
 import { readImageAsDataUrl } from './documentIO'
+import { sanitizeHtml } from './sanitizeHtml'
 
 const chartPalette = ['#1f8efa', '#38bdf8', '#16a34a', '#f59e0b', '#ef4444', '#7c3aed', '#0ea5a4', '#8b5cf6']
 
@@ -57,6 +58,59 @@ const wrapText = (value: string, maxChars: number) => {
   }
 
   return lines
+}
+
+const chartLabelText = (plain: string, html: string | undefined, maxChars: number, x: number, lineHeight: number) => {
+  const source = html?.trim() ? new DOMParser().parseFromString(sanitizeHtml(html), 'text/html').body : null
+  const segments: Array<{ text: string; bold: boolean; italic: boolean; underline: boolean; color?: string; fontSize?: string; fontFamily?: string }> = []
+  const visit = (node: Node, inherited = { bold: false, italic: false, underline: false, color: undefined as string | undefined, fontSize: undefined as string | undefined, fontFamily: undefined as string | undefined }) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      if (node.textContent) segments.push({ ...inherited, text: node.textContent })
+      return
+    }
+    if (!(node instanceof HTMLElement)) return
+    const style = node.getAttribute('style') || ''
+    const next = {
+      bold: inherited.bold || node.tagName === 'B' || node.tagName === 'STRONG' || /font-weight\s*:\s*(bold|[6-9]00)/i.test(style),
+      italic: inherited.italic || node.tagName === 'I' || node.tagName === 'EM' || /font-style\s*:\s*italic/i.test(style),
+      underline: inherited.underline || node.tagName === 'U' || /text-decoration[^;]*underline/i.test(style),
+      color: style.match(/(?:^|;)\s*color\s*:\s*([^;]+)/i)?.[1]?.trim() || inherited.color,
+      fontSize: style.match(/(?:^|;)\s*font-size\s*:\s*([\d.]+px)/i)?.[1] || inherited.fontSize,
+      fontFamily: style.match(/(?:^|;)\s*font-family\s*:\s*([^;]+)/i)?.[1]?.trim() || inherited.fontFamily,
+    }
+    node.childNodes.forEach((child) => visit(child, next))
+  }
+  if (source) source.childNodes.forEach((node) => visit(node))
+  const richText = segments.map((segment) => segment.text).join('').replace(/\s+/g, ' ').trim()
+  if (!segments.length || richText !== plain.replace(/\s+/g, ' ').trim()) {
+    segments.splice(0, segments.length, { text: plain, bold: false, italic: false, underline: false })
+  }
+  const expanded = segments.flatMap((segment) => Array.from(segment.text.replace(/\s+/g, ' '), (char) => ({ ...segment, text: char })))
+  const lines = wrapText(plain, maxChars)
+  let offset = 0
+  return lines.map((line, lineIndex) => {
+    while (expanded[offset]?.text === ' ' && lineIndex > 0) offset += 1
+    const chars = expanded.slice(offset, offset + line.length)
+    offset += line.length
+    const chunks: Array<{ text: string; style: typeof expanded[number] }> = []
+    chars.forEach((char) => {
+      const prior = chunks[chunks.length - 1]
+      if (prior && prior.style.bold === char.bold && prior.style.italic === char.italic && prior.style.underline === char.underline && prior.style.color === char.color && prior.style.fontSize === char.fontSize && prior.style.fontFamily === char.fontFamily) prior.text += char.text
+      else chunks.push({ text: char.text, style: char })
+    })
+    const styled = chunks.map(({ text, style }) => {
+      const attrs = [
+        style.bold ? 'font-weight="700"' : '',
+        style.italic ? 'font-style="italic"' : '',
+        style.underline ? 'text-decoration="underline"' : '',
+        style.color && (/^#[0-9a-f]{3,8}$/i.test(style.color) || /^rgba?\([\d.,%\s]+\)$/i.test(style.color)) ? `fill="${escapeXml(style.color)}"` : '',
+        style.fontSize ? `font-size="${escapeXml(style.fontSize)}"` : '',
+        style.fontFamily && /^[\w\s,'"-]+$/.test(style.fontFamily) ? `font-family="${escapeXml(style.fontFamily)}"` : '',
+      ].filter(Boolean).join(' ')
+      return `<tspan ${attrs}>${escapeXml(text)}</tspan>`
+    }).join('')
+    return `<tspan x="${x}" dy="${lineIndex === 0 ? 0 : lineHeight}">${styled}</tspan>`
+  }).join('')
 }
 
 const normalizeSheetRows = (rows: unknown[][]) => {
@@ -273,7 +327,7 @@ export const getChartImageSrc = (data: ChartData) => {
   const max = Math.max(1, data.max, ...data.items.map((item) => item.value))
   const { series } = data.spreadsheetChart || {}
   return series
-    ? renderMultiSeriesChartToSvgDataUrl(data.items.map((item) => item.label), series, max, divisions, data)
+    ? renderMultiSeriesChartToSvgDataUrl(data.items, series, max, divisions, data)
     : renderChartItemsToSvgDataUrl(data.items, { max, divisions, showValues: data.showValues ?? true, radius: data.barRadius ?? 3, barHeight: data.barHeight ?? 18 })
 }
 
@@ -314,12 +368,10 @@ const renderChartItemsToSvgDataUrl = (
       const label = labels[index]
 
       return `
-        <text x="${paddingX}" y="${centerY + 5 - (label.length - 1) * 8}" fill="#46607f" font-size="16" font-weight="500" font-family="Open Sans, Arial, sans-serif">${label.map((line, index) =>
-          `<tspan x="${paddingX}" dy="${index === 0 ? 0 : 16}">${escapeXml(line)}</tspan>`,
-        ).join('')}</text>
+        <text x="${paddingX}" y="${centerY + 5 - (label.length - 1) * 8}" fill="#46607f" font-size="16" font-weight="500" font-family="Open Sans, Arial, sans-serif">${chartLabelText(item.label, item.labelHtml, 13, paddingX, 16)}</text>
         <rect x="${barX}" y="${centerY - barHeight / 2}" width="${barWidth}" height="${barHeight}" rx="${radius}" fill="#e7eef9" />
         <rect x="${barX}" y="${centerY - barHeight / 2}" width="${filledWidth}" height="${barHeight}" rx="${radius}" fill="${escapeXml(item.color)}" />
-        ${showValues ? `<text x="${barX + barWidth + gap}" y="${centerY + 5}" fill="#46607f" font-size="16" font-weight="500" font-family="Open Sans, Arial, sans-serif">${item.value.toLocaleString('ru-RU', { maximumSignificantDigits: 17 })}</text>` : ''}
+        ${showValues ? `<text x="${barX + barWidth + gap}" y="${centerY + 5}" fill="#46607f" font-size="16" font-weight="500" font-family="Open Sans, Arial, sans-serif">${chartLabelText(item.value.toLocaleString('ru-RU', { maximumSignificantDigits: 17 }), item.valueHtml, 16, barX + barWidth + gap, 18)}</text>` : ''}
       `
     })
     .join('')
@@ -334,7 +386,7 @@ const renderChartItemsToSvgDataUrl = (
 }
 
 const renderMultiSeriesChartToSvgDataUrl = (
-  categories: string[],
+  categories: ChartItem[],
   series: ChartSeries[],
   maxValue: number,
   divisions: number,
@@ -357,7 +409,7 @@ const renderMultiSeriesChartToSvgDataUrl = (
   const availableBarWidth = (groupWidth - barGap * Math.max(0, series.length - 1)) / Math.max(series.length, 1)
   const barWidth = Math.min(availableBarWidth, data.barHeight ?? 18)
   const axisBottom = paddingTop + chartHeight
-  const categoryLabels = categories.map((label) => wrapText(label, Math.floor(groupWidth / 8)))
+  const categoryLabels = categories.map((item) => wrapText(item.label, Math.floor(groupWidth / 8)))
   const legendY = axisBottom + Math.max(1, ...categoryLabels.map((lines) => lines.length)) * 18 + 24
   const gridSvg = divisions ? Array.from({ length: divisions + 1 }, (_, index) => {
     const y = paddingTop + (chartHeight / divisions) * index
@@ -369,7 +421,7 @@ const renderMultiSeriesChartToSvgDataUrl = (
   }).join('') : ''
 
   const barsSvg = categories
-    .map((_, categoryIndex) => {
+    .map((item, categoryIndex) => {
       const groupX = paddingLeft + categoryIndex * (groupWidth + groupGap)
       const centerX = groupX + groupWidth / 2
       const categoryBars = series
@@ -385,16 +437,14 @@ const renderMultiSeriesChartToSvgDataUrl = (
 
           return `
             <rect x="${x}" y="${y}" width="${barWidth}" height="${height}" rx="${data.barRadius ?? 3}" fill="${escapeXml(seriesItem.color)}" />
-            ${data.showValues === false ? '' : `<text x="${x + barWidth / 2}" y="${y - 5}" text-anchor="middle" fill="#46607f" font-size="13">${value.toLocaleString('ru-RU')}</text>`}
+            ${data.showValues === false ? '' : `<text x="${x + barWidth / 2}" y="${y - 5}" text-anchor="middle" fill="#46607f" font-size="13">${chartLabelText(value.toLocaleString('ru-RU'), seriesItem.valuesHtml?.[categoryIndex], 10, x + barWidth / 2, 13)}</text>`}
           `
         })
         .join('')
 
       return `
         ${categoryBars}
-        <text x="${centerX}" y="${axisBottom + 20}" fill="#46607f" font-size="16" text-anchor="middle" font-family="Open Sans, Arial, sans-serif">${categoryLabels[categoryIndex].map((line, index) =>
-          `<tspan x="${centerX}" dy="${index === 0 ? 0 : 18}">${escapeXml(line)}</tspan>`,
-        ).join('')}</text>
+        <text x="${centerX}" y="${axisBottom + 20}" fill="#46607f" font-size="16" text-anchor="middle" font-family="Open Sans, Arial, sans-serif">${chartLabelText(item.label, item.labelHtml, Math.floor(groupWidth / 8), centerX, 18)}</text>
       `
     })
     .join('')
@@ -406,7 +456,7 @@ const renderMultiSeriesChartToSvgDataUrl = (
       legendX += legendItemWidths[index]
       return `
         <circle cx="${x}" cy="${legendY}" r="6" fill="${escapeXml(seriesItem.color)}" />
-        <text x="${x + 12}" y="${legendY + 5}" fill="#2e4669" font-size="16" font-family="Open Sans, Arial, sans-serif">${escapeXml(seriesItem.name)}</text>
+        <text x="${x + 12}" y="${legendY + 5}" fill="#2e4669" font-size="16" font-family="Open Sans, Arial, sans-serif">${chartLabelText(seriesItem.name, seriesItem.nameHtml, Math.max(1, Math.floor((legendItemWidths[index] - 36) / 9)), x + 12, 18)}</text>
       `
     })
     .join('')

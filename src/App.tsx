@@ -124,6 +124,7 @@ const normalizeDocument = (value: unknown): ArticleDocument | null => {
           collageLayout: data.collageLayout === 'two' || data.collageLayout === 'three' || data.collageLayout === 'lead' ? data.collageLayout : undefined,
           collageFit: data.collageFit === 'cover' || data.collageFit === 'contain' ? data.collageFit : undefined,
           caption: String(data.caption || ''),
+          captionHtml: typeof data.captionHtml === 'string' ? data.captionHtml : undefined,
           textHtml: String(data.textHtml || ''),
           imageSide: data.imageSide === 'right' ? 'right' : 'left',
           textLayout,

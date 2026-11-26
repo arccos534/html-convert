@@ -39,7 +39,9 @@ export interface HeroData {
 
 export interface NewsIntroData {
   title: string
+  titleHtml?: string
   subtitle: string
+  subtitleHtml?: string
   leadHtml: string
   align: TextAlign
 }
@@ -53,13 +55,17 @@ export interface RichTextData {
 
 export interface CalloutData {
   title: string
+  titleHtml?: string
   content: string
+  contentHtml?: string
   tone: 'info' | 'success' | 'warning' | 'danger'
 }
 
 export interface ImportantData {
   title: string
+  titleHtml?: string
   content: string
+  contentHtml?: string
   accentColor: string
   borderColor: string
   radius: number
@@ -78,6 +84,7 @@ export interface QuoteData {
 
 export interface BackgroundData {
   title: string
+  titleHtml?: string
   contentHtml: string
   background: string
   textColor: string
@@ -87,10 +94,12 @@ export interface DividerData {
   style: 'solid' | 'dashed' | 'thick'
   color: string
   label: string
+  labelHtml?: string
 }
 
 export interface ButtonData {
   label: string
+  labelHtml?: string
   url: string
   align: TextAlign
   variant: 'primary' | 'secondary' | 'ghost'
@@ -105,8 +114,11 @@ export interface ButtonData {
 
 export interface TableData {
   caption: string
+  captionHtml?: string
   headers: string[]
+  headersHtml?: string[]
   rows: string[][]
+  rowsHtml?: string[][]
 }
 
 export interface ColumnItem {
@@ -142,6 +154,7 @@ export interface ImageData extends ImagePhoto {
   collageLayout?: 'two' | 'three' | 'lead'
   collageFit?: 'cover' | 'contain'
   caption: string
+  captionHtml?: string
   textHtml: string
   imageSide: 'left' | 'right'
   textLayout?: 'columns' | 'wrap' | 'stack'
@@ -157,18 +170,25 @@ export interface ImageData extends ImagePhoto {
 
 export interface StatItem {
   label: string
+  labelHtml?: string
   value: string
+  valueHtml?: string
   description: string
+  descriptionHtml?: string
 }
 
 export interface StatsData {
+  columns?: 1 | 2 | 3 | 4
   title: string
+  titleHtml?: string
   items: StatItem[]
 }
 
 export interface ChartItem {
   label: string
+  labelHtml?: string
   value: number
+  valueHtml?: string
   color: string
 }
 
@@ -176,8 +196,10 @@ export type ChartType = 'bar' | 'pie'
 
 export interface ChartSeries {
   name: string
+  nameHtml?: string
   color: string
   values: Array<number | null>
+  valuesHtml?: Array<string | undefined>
 }
 
 export interface ChartData {

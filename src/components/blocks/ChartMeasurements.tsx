@@ -1,5 +1,6 @@
 import type { ChartData } from '../../types'
 import { chartScaleDivisions, getChartScaleDivisions } from '../../lib/chartScale'
+import { FormattedTextField } from './FormattedTextField'
 
 export const ChartMeasurements = ({ data, onChange }: { data: ChartData; onChange: (data: ChartData) => void }) => {
   const series = data.spreadsheetChart?.series
@@ -11,6 +12,7 @@ export const ChartMeasurements = ({ data, onChange }: { data: ChartData; onChang
     items: data.items.filter((_, position) => position !== index),
     spreadsheetChart: series ? { series: series.map(entry => ({
       ...entry, values: entry.values.filter((_, position) => position !== index),
+      valuesHtml: entry.valuesHtml?.filter((_, position) => position !== index),
     })) } : data.spreadsheetChart,
   })
   return <div className="chart-measurements">
@@ -24,25 +26,28 @@ export const ChartMeasurements = ({ data, onChange }: { data: ChartData; onChang
       </select></label>
       <label>Максимум шкалы<input type="number" min={1} value={data.max} onChange={event => onChange({ ...data, max: Math.max(1, Number(event.target.value) || 1) })} /></label>
     </div>
-    {series?.map((entry, index) => <label key={index} className="chart-series-name">Название ряда
-      <input value={entry.name} onChange={event => onChange({ ...data, spreadsheetChart: { series: series.map((item, position) =>
-        position === index ? { ...item, name: event.target.value } : item) } })} />
-    </label>)}
+    {series?.map((entry, index) => <div key={index} className="chart-series-name"><span>Название ряда</span>
+      <FormattedTextField value={entry.name} html={entry.nameHtml} ariaLabel={`Название ряда ${index + 1}`} readOnly={false}
+        onChange={(name, nameHtml) => onChange({ ...data, spreadsheetChart: { series: series.map((item, position) =>
+          position === index ? { ...item, name, nameHtml } : item) } })} />
+    </div>)}
     {data.items.map((item, index) => <div className="chart-measurement" key={index}>
       <div className="chart-measurement-name">
-        <input aria-label={`Название измерения ${index + 1}`} value={item.label} onChange={event => updateItem(index, { label: event.target.value })} />
+        <FormattedTextField value={item.label} html={item.labelHtml} ariaLabel={`Название измерения ${index + 1}`} readOnly={false}
+          onChange={(label, labelHtml) => updateItem(index, { label, labelHtml })} />
         <button type="button" aria-label={`Удалить измерение ${item.label}`} onClick={() => remove(index)}>×</button>
       </div>
       {(series || [{ name: item.label, color: item.color, values: data.items.map(entry => entry.value) }]).map((entry, seriesIndex) => {
         const value = entry.values[index]
-        const update = (patch: { color?: string; value?: number | null }) => {
+        const update = (patch: { color?: string; value?: number | null; valueHtml?: string }) => {
           if (!series) {
-            updateItem(index, { color: patch.color ?? item.color, value: patch.value ?? item.value })
+            updateItem(index, { color: patch.color ?? item.color, value: patch.value ?? item.value, valueHtml: patch.valueHtml ?? item.valueHtml })
             return
           }
           const nextSeries = series.map((row, position) => position === seriesIndex ? {
             ...row, color: patch.color ?? row.color,
             values: patch.value !== undefined ? row.values.map((number, position) => position === index ? patch.value! : number) : row.values,
+            valuesHtml: patch.valueHtml !== undefined ? Array.from({ length: row.values.length }, (_, valueIndex) => valueIndex === index ? patch.valueHtml : row.valuesHtml?.[valueIndex]) : row.valuesHtml,
           } : row)
           onChange({ ...data, spreadsheetChart: { series: nextSeries }, items: data.items.map((row, position) => ({
             ...row, value: Math.max(0, ...nextSeries.map(entry => entry.values[position] ?? 0)),
@@ -54,14 +59,19 @@ export const ChartMeasurements = ({ data, onChange }: { data: ChartData; onChang
             <input type="color" aria-label={`Цвет ${item.label}${series ? ` ${entry.name}` : ''}`} value={entry.color}
               title="Изменить цвет полосы" onChange={event => update({ color: event.target.value })} />
           </div>
-          <input className="chart-measurement-value" type="number" min={0} step="any" aria-label={`Значение ${item.label}${series ? ` ${entry.name}` : ''}`}
-            value={value ?? ''} placeholder="Нет данных" onChange={event => update({ value: event.target.value === '' && series ? null : Math.max(0, Number(event.target.value) || 0) })} />
+          <div className="chart-measurement-value"><FormattedTextField value={value == null ? '' : String(value)} html={series ? entry.valuesHtml?.[index] : item.valueHtml}
+            ariaLabel={`Значение ${item.label}${series ? ` ${entry.name}` : ''}`} readOnly={false}
+            onChange={(text, valueHtml) => {
+              const parsed = text.trim() === '' ? null : Number(text.trim().replace(',', '.'))
+              if (parsed !== null && (!Number.isFinite(parsed) || parsed < 0)) return
+              update({ value: parsed, valueHtml })
+            }} /></div>
         </div>
       })}
     </div>)}
     <button type="button" className="settings-action-button" onClick={() => onChange({
       ...data, items: [...data.items, { label: 'Новое измерение', value: 0, color: '#1f8efa' }],
-      spreadsheetChart: series ? { series: series.map(entry => ({ ...entry, values: [...entry.values, 0] })) } : data.spreadsheetChart,
+      spreadsheetChart: series ? { series: series.map(entry => ({ ...entry, values: [...entry.values, 0], valuesHtml: entry.valuesHtml ? [...entry.valuesHtml, undefined] : undefined })) } : data.spreadsheetChart,
     })}>Добавить измерение</button>
   </div>
 }

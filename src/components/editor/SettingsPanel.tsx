@@ -1,4 +1,5 @@
 import { getImageLayout } from '../../lib/imageLayout'
+import { insertTableRow, removeTableRow, resizeTableColumn } from '../../lib/tableEditing'
 import { hasMeaningfulHtml } from '../../lib/sanitizeHtml'
 import { useEffect, useState } from 'react'
 import { blockNames } from '../../data/blockFactory'
@@ -57,17 +58,6 @@ const clearParagraphAlignment = (html: string) => {
   }
   return changed ? template.innerHTML : html
 }
-
-const splitLines = (value: string) =>
-  value
-    .split(/\r?\n/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-
-const joinRows = (rows: string[][]) => rows.map((row) => row.join(' | ')).join('\n')
-
-const splitRows = (value: string) =>
-  splitLines(value).map((line) => line.split('|').map((cell) => cell.trim()))
 
 const createCardItem = () => ({
   title: 'Новая карточка',
@@ -1712,53 +1702,29 @@ export const SettingsPanel = ({
       case 'table':
         return (
           <div className="settings-stack">
-            <label>
-              Подпись таблицы
-              <input
-                value={block.data.caption}
-                onChange={(event) =>
-                  onUpdateBlock({ ...block, data: { ...block.data, caption: event.target.value } })
-                }
-              />
-            </label>
-
-            <label>
-              Заголовки столбцов
-              <textarea
-                rows={Math.max(3, block.data.headers.length)}
-                value={block.data.headers.join('\n')}
-                onChange={(event) =>
-                  onUpdateBlock({
-                    ...block,
-                    data: {
-                      ...block.data,
-                      headers: splitLines(event.target.value),
-                    },
-                  })
-                }
-              />
-            </label>
-
-            <label>
-              Строки таблицы
-              <textarea
-                rows={Math.max(4, block.data.rows.length + 1)}
-                value={joinRows(block.data.rows)}
-                onChange={(event) =>
-                  onUpdateBlock({
-                    ...block,
-                    data: {
-                      ...block.data,
-                      rows: splitRows(event.target.value),
-                    },
-                  })
-                }
-              />
-            </label>
-
-            <p className="settings-tip">Каждая строка таблицы с новой строки, ячейки разделяйте символом |.</p>
+            <p className="settings-tip">Текст и ячейки редактируются на холсте. Оформление применяется верхней панелью.</p>
+            <button type="button" className="settings-action-button" onClick={() => onUpdateBlock({ ...block, data: insertTableRow(block.data, block.data.rows.length) })}>Добавить строку</button>
+            <button type="button" className="settings-action-button" onClick={() => onUpdateBlock({ ...block, data: resizeTableColumn(block.data, Math.max(1, block.data.headers.length, ...block.data.rows.map(row => row.length))) })}>Добавить столбец</button>
+            <h4>Столбцы</h4>
+            {Array.from({ length: Math.max(1, block.data.headers.length, ...block.data.rows.map(row => row.length)) }, (_, index) => (
+              <div className="settings-item-head" key={index}>
+                <span>Столбец {index + 1}</span>
+                <button type="button" disabled={Math.max(block.data.headers.length, ...block.data.rows.map(row => row.length)) <= 1}
+                  aria-label={`Удалить столбец ${index + 1}`}
+                  onClick={() => onUpdateBlock({ ...block, data: resizeTableColumn(block.data, index, true) })}>Удалить</button>
+              </div>
+            ))}
+            <h4>Строки</h4>
+            {block.data.rows.map((_, index) => (
+              <div className="settings-item-head" key={index}>
+                <span>Строка {index + 1}</span>
+                <button type="button" aria-label={`Удалить строку ${index + 1}`}
+                  onClick={() => onUpdateBlock({ ...block, data: removeTableRow(block.data, index) })}>Удалить</button>
+              </div>
+            ))}
           </div>
         )
+
 
       case 'columns': {
         return (
@@ -2103,6 +2069,11 @@ export const SettingsPanel = ({
       case 'stats':
         return (
           <div className="settings-stack">
+            <label>Колонок с показателями
+              <select value={block.data.columns ?? 1} onChange={(event) => onUpdateBlock({ ...block, data: { ...block.data, columns: Number(event.target.value) as 1 | 2 | 3 | 4 } })}>
+                {[1, 2, 3, 4].map(count => <option key={count} value={count}>{count}</option>)}
+              </select>
+            </label>
             <label>
               Заголовок блока
               <input
@@ -2128,7 +2099,6 @@ export const SettingsPanel = ({
                         },
                       })
                     }
-                    disabled={block.data.items.length <= 1}
                   >
                     Удалить
                   </button>

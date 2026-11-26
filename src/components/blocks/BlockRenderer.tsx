@@ -1,3 +1,5 @@
+import { TableBlockEditor } from './TableBlockEditor'
+import { StatsBlockEditor } from './StatsBlockEditor'
 import { sanitizeHtml } from '../../lib/sanitizeHtml'
 import type { ArticleBlock } from '../../types'
 import { ChartBlockEditor } from './ChartBlockEditor'
@@ -5,6 +7,8 @@ import { buildHeroBackground, getHeroTextColor } from '../../lib/heroBackground'
 import { resolveButtonStyle } from '../../lib/buttonStyle'
 import { ImageBlockEditor } from './ImageBlockEditor'
 import { RichTextEditor } from './RichTextEditor'
+import { FormattedTextField } from './FormattedTextField'
+import { getFormattedTextHtml } from '../../lib/formattedText'
 
 interface BlockRendererProps {
   block: ArticleBlock
@@ -68,62 +72,6 @@ const hexToRgba = (hex: string, alpha: number) => {
   const b = Number.parseInt(full.slice(4, 6), 16)
   return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
-
-const stopInlineEvent = (event: React.MouseEvent | React.FocusEvent) => {
-  event.stopPropagation()
-}
-
-
-const InlineInput = ({
-  value,
-  onChange,
-  className,
-  placeholder,
-  style,
-}: {
-  value: string
-  onChange: (value: string) => void
-  className?: string
-  placeholder?: string
-  style?: React.CSSProperties
-}) => (
-  <input
-    className={`inline-edit-input ${className || ''}`.trim()}
-    value={value}
-    placeholder={placeholder}
-    style={style}
-    onClick={stopInlineEvent}
-    onFocus={stopInlineEvent}
-    onChange={(event) => onChange(event.target.value)}
-  />
-)
-
-const InlineTextarea = ({
-  value,
-  onChange,
-  className,
-  placeholder,
-  rows = 2,
-  style,
-}: {
-  value: string
-  onChange: (value: string) => void
-  className?: string
-  placeholder?: string
-  rows?: number
-  style?: React.CSSProperties
-}) => (
-  <textarea
-    className={`inline-edit-textarea ${className || ''}`.trim()}
-    value={value}
-    placeholder={placeholder}
-    rows={rows}
-    style={style}
-    onClick={stopInlineEvent}
-    onFocus={stopInlineEvent}
-    onChange={(event) => onChange(event.target.value)}
-  />
-)
 
 export const BlockRenderer = ({
   block,
@@ -219,23 +167,15 @@ export const BlockRenderer = ({
         >
           {canEdit ? (
             <>
-              <InlineTextarea
-                value={block.data.title}
-                className="news-intro-title-edit"
-                rows={2}
-                onChange={(title) => onChange({ ...block, data: { ...block.data, title } })}
-              />
-              <InlineTextarea
-                value={block.data.subtitle}
-                className="news-intro-subtitle-edit"
-                rows={2}
-                onChange={(subtitle) => onChange({ ...block, data: { ...block.data, subtitle } })}
-              />
+              <div className="news-intro-title-edit"><FormattedTextField value={block.data.title} html={block.data.titleHtml} tag="h2" ariaLabel="Заголовок новости" readOnly={!canEdit}
+                onChange={(title, titleHtml) => onChange({ ...block, data: { ...block.data, title, titleHtml } })} /></div>
+              <div className="news-intro-subtitle-edit"><FormattedTextField value={block.data.subtitle} html={block.data.subtitleHtml} tag="p" ariaLabel="Подзаголовок новости" readOnly={!canEdit}
+                onChange={(subtitle, subtitleHtml) => onChange({ ...block, data: { ...block.data, subtitle, subtitleHtml } })} /></div>
             </>
           ) : (
             <>
-              <h2>{block.data.title}</h2>
-              <p className="news-intro-subtitle">{block.data.subtitle}</p>
+              <h2 dangerouslySetInnerHTML={{ __html: getFormattedTextHtml(block.data.title, block.data.titleHtml, 'h2') }} />
+              <div className="news-intro-subtitle" dangerouslySetInnerHTML={{ __html: getFormattedTextHtml(block.data.subtitle, block.data.subtitleHtml, 'p') }} />
             </>
           )}
           <RichTextEditor
@@ -279,22 +219,15 @@ export const BlockRenderer = ({
         >
           {canEdit ? (
             <>
-              <InlineInput
-                value={block.data.title}
-                className="block-title-edit"
-                onChange={(title) => onChange({ ...block, data: { ...block.data, title } })}
-              />
-              <InlineTextarea
-                value={block.data.content}
-                className="block-text-edit"
-                rows={3}
-                onChange={(content) => onChange({ ...block, data: { ...block.data, content } })}
-              />
+              <div className="block-title-edit"><FormattedTextField value={block.data.title} html={block.data.titleHtml} tag="h3" ariaLabel="Заголовок выноски" readOnly={!canEdit}
+                onChange={(title, titleHtml) => onChange({ ...block, data: { ...block.data, title, titleHtml } })} /></div>
+              <div className="block-text-edit"><FormattedTextField value={block.data.content} html={block.data.contentHtml} ariaLabel="Текст выноски" readOnly={!canEdit}
+                onChange={(content, contentHtml) => onChange({ ...block, data: { ...block.data, content, contentHtml } })} /></div>
             </>
           ) : (
             <>
-              <h3>{block.data.title}</h3>
-              <p>{block.data.content}</p>
+              <h3 dangerouslySetInnerHTML={{ __html: getFormattedTextHtml(block.data.title, block.data.titleHtml, 'h3') }} />
+              <div dangerouslySetInnerHTML={{ __html: getFormattedTextHtml(block.data.content, block.data.contentHtml, 'p') }} />
             </>
           )}
         </aside>
@@ -315,22 +248,15 @@ export const BlockRenderer = ({
         >
           {canEdit ? (
             <>
-              <InlineInput
-                value={block.data.title}
-                className="block-title-edit"
-                onChange={(title) => onChange({ ...block, data: { ...block.data, title } })}
-              />
-              <InlineTextarea
-                value={block.data.content}
-                className="block-text-edit"
-                rows={3}
-                onChange={(content) => onChange({ ...block, data: { ...block.data, content } })}
-              />
+              <div className="block-title-edit"><FormattedTextField value={block.data.title} html={block.data.titleHtml} tag="h3" ariaLabel="Заголовок важного блока" readOnly={!canEdit}
+                onChange={(title, titleHtml) => onChange({ ...block, data: { ...block.data, title, titleHtml } })} /></div>
+              <div className="block-text-edit"><FormattedTextField value={block.data.content} html={block.data.contentHtml} ariaLabel="Текст важного блока" readOnly={!canEdit}
+                onChange={(content, contentHtml) => onChange({ ...block, data: { ...block.data, content, contentHtml } })} /></div>
             </>
           ) : (
             <>
-              <h3>{block.data.title}</h3>
-              <p>{block.data.content}</p>
+              <h3 dangerouslySetInnerHTML={{ __html: getFormattedTextHtml(block.data.title, block.data.titleHtml, 'h3') }} />
+              <div dangerouslySetInnerHTML={{ __html: getFormattedTextHtml(block.data.content, block.data.contentHtml, 'p') }} />
             </>
           )}
         </aside>
@@ -415,14 +341,10 @@ export const BlockRenderer = ({
           onClick={onSelect}
         >
           {canEdit ? (
-            <InlineInput
-              value={block.data.title}
-              className="block-title-edit"
-              style={{ color: block.data.textColor }}
-              onChange={(title) => onChange({ ...block, data: { ...block.data, title } })}
-            />
+            <div className="block-title-edit" style={{ color: block.data.textColor }}><FormattedTextField value={block.data.title} html={block.data.titleHtml} tag="h3" ariaLabel="Заголовок блока с фоном" readOnly={!canEdit}
+              onChange={(title, titleHtml) => onChange({ ...block, data: { ...block.data, title, titleHtml } })} /></div>
           ) : (
-            <h3>{block.data.title}</h3>
+            <h3 dangerouslySetInnerHTML={{ __html: getFormattedTextHtml(block.data.title, block.data.titleHtml, 'h3') }} />
           )}
           <RichTextEditor
             value={block.data.contentHtml}
@@ -444,14 +366,10 @@ export const BlockRenderer = ({
           <div className={`divider divider-${block.data.style}`}>
             <span style={{ borderColor: block.data.color }} />
             {canEdit ? (
-              <InlineInput
-                value={block.data.label}
-                className="divider-label-edit"
-                placeholder="Подпись разделителя"
-                onChange={(label) => onChange({ ...block, data: { ...block.data, label } })}
-              />
+              <div className="divider-label-edit"><FormattedTextField value={block.data.label} html={block.data.labelHtml} tag="span" ariaLabel="Подпись разделителя" readOnly={!canEdit}
+                onChange={(label, labelHtml) => onChange({ ...block, data: { ...block.data, label, labelHtml } })} /></div>
             ) : (
-              block.data.label && <strong>{block.data.label}</strong>
+              block.data.label && <strong dangerouslySetInnerHTML={{ __html: getFormattedTextHtml(block.data.label, block.data.labelHtml, 'span') }} />
             )}
             <span style={{ borderColor: block.data.color }} />
           </div>
@@ -479,11 +397,8 @@ export const BlockRenderer = ({
                   padding: `${buttonStyle.paddingY}px ${buttonStyle.paddingX}px`,
                 }}
               >
-                <InlineInput
-                  value={block.data.label}
-                  className="button-label-edit"
-                  onChange={(label) => onChange({ ...block, data: { ...block.data, label } })}
-                />
+                <div className="button-label-edit"><FormattedTextField value={block.data.label} html={block.data.labelHtml} tag="span" ariaLabel="Текст кнопки" readOnly={!canEdit}
+                  onChange={(label, labelHtml) => onChange({ ...block, data: { ...block.data, label, labelHtml } })} /></div>
               </div>
             ) : (
               <a
@@ -498,7 +413,7 @@ export const BlockRenderer = ({
                   padding: `${buttonStyle.paddingY}px ${buttonStyle.paddingX}px`,
                 }}
               >
-                {block.data.label}
+                <span dangerouslySetInnerHTML={{ __html: getFormattedTextHtml(block.data.label, block.data.labelHtml, 'span') }} />
               </a>
             )}
           </div>
@@ -507,72 +422,9 @@ export const BlockRenderer = ({
 
     }
     case 'table':
-      return (
-        <section
-          className={`content-block ${selected ? 'is-selected' : ''}`}
-          style={{ marginTop: block.spacing.marginTop, marginBottom: block.spacing.marginBottom }}
-          onClick={onSelect}
-        >
-          <div className="table-editor">
-            {canEdit ? (
-              <InlineInput
-                value={block.data.caption}
-                className="table-caption-edit"
-                placeholder="Подпись таблицы"
-                onChange={(caption) => onChange({ ...block, data: { ...block.data, caption } })}
-              />
-            ) : (
-              block.data.caption && <p className="table-caption">{block.data.caption}</p>
-            )}
-            <table>
-              <thead>
-                <tr>
-                  {block.data.headers.map((h, i) => (
-                    <th key={i}>
-                      {canEdit ? (
-                        <InlineInput
-                          value={h}
-                          className="table-cell-edit table-header-edit"
-                          onChange={(value) => {
-                            const headers = [...block.data.headers]
-                            headers[i] = value
-                            onChange({ ...block, data: { ...block.data, headers } })
-                          }}
-                        />
-                      ) : (
-                        h
-                      )}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {block.data.rows.map((row, rowIndex) => (
-                  <tr key={`${block.id}-${rowIndex}`}>
-                    {row.map((cell, cellIndex) => (
-                      <td key={`${rowIndex}-${cellIndex}`}>
-                        {canEdit ? (
-                          <InlineInput
-                            value={cell}
-                            className="table-cell-edit"
-                            onChange={(value) => {
-                              const rows = block.data.rows.map((currentRow) => [...currentRow])
-                              rows[rowIndex][cellIndex] = value
-                              onChange({ ...block, data: { ...block.data, rows } })
-                            }}
-                          />
-                        ) : (
-                          cell
-                        )}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )
+      return <div style={{ marginTop: block.spacing.marginTop, marginBottom: block.spacing.marginBottom }} onClick={onSelect}>
+        <TableBlockEditor block={block} editable={canEdit} onChange={onChange} />
+      </div>
 
     case 'columns':
       return (
@@ -669,67 +521,9 @@ export const BlockRenderer = ({
       )
 
     case 'stats':
-      return (
-        <section
-          className={`content-block ${selected ? 'is-selected' : ''}`}
-          style={{ marginTop: block.spacing.marginTop, marginBottom: block.spacing.marginBottom }}
-          onClick={onSelect}
-        >
-          {canEdit ? (
-            <InlineInput
-              value={block.data.title}
-              className="block-title-edit"
-              onChange={(title) => onChange({ ...block, data: { ...block.data, title } })}
-            />
-          ) : (
-            <h3>{block.data.title}</h3>
-          )}
-          <div className="stats-grid">
-            {block.data.items.map((item, index) => (
-              <article key={`${block.id}-${index}`} className="stat-card">
-                {canEdit ? (
-                  <>
-                    <InlineInput
-                      value={item.value}
-                      className="stat-value-edit"
-                      onChange={(value) => {
-                        const items = [...block.data.items]
-                        items[index] = { ...items[index], value }
-                        onChange({ ...block, data: { ...block.data, items } })
-                      }}
-                    />
-                    <InlineInput
-                      value={item.label}
-                      className="stat-label-edit"
-                      onChange={(label) => {
-                        const items = [...block.data.items]
-                        items[index] = { ...items[index], label }
-                        onChange({ ...block, data: { ...block.data, items } })
-                      }}
-                    />
-                    <InlineTextarea
-                      value={item.description}
-                      className="stat-description-edit"
-                      rows={3}
-                      onChange={(description) => {
-                        const items = [...block.data.items]
-                        items[index] = { ...items[index], description }
-                        onChange({ ...block, data: { ...block.data, items } })
-                      }}
-                    />
-                  </>
-                ) : (
-                  <>
-                    <p className="stat-value">{item.value}</p>
-                    <p className="stat-label">{item.label}</p>
-                    <p className="stat-description">{item.description}</p>
-                  </>
-                )}
-              </article>
-            ))}
-          </div>
-        </section>
-      )
+      return <div style={{ marginTop: block.spacing.marginTop, marginBottom: block.spacing.marginBottom }} onClick={onSelect}>
+        <StatsBlockEditor block={block} editable={canEdit} onChange={onChange} />
+      </div>
 
     case 'chart':
       return <ChartBlockEditor block={block} selected={selected} editable={editable} onSelect={onSelect} onChange={onChange} onImportChart={onImportChart} />
