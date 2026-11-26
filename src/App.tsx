@@ -33,6 +33,7 @@ import {
 } from './lib/localAccounts'
 import { normalizeColumnsData } from './lib/columns'
 import { createDefaultHeroBackground } from './lib/heroBackground'
+import { normalizeAdditionalPhotos } from './lib/imageLayout'
 import type { ArticleBlock, ArticleDocument, ArticleSettings, BlockType } from './types'
 import './App.css'
 import './EditorWorkspace.css'
@@ -108,16 +109,24 @@ const normalizeDocument = (value: unknown): ArticleDocument | null => {
 
     if (block.type === 'image') {
       const data = block.data as unknown as Record<string, unknown>
+      const src = String(data.src || '')
+      const alt = String(data.alt ?? 'Изображение новости')
+      const additionalPhotos = normalizeAdditionalPhotos(data.additionalPhotos)
+      const first = src.trim() ? { src, alt } : additionalPhotos.shift() ?? { src, alt }
+      const textLayout = data.textLayout === 'wrap' || data.textLayout === 'stack' || data.textLayout === 'columns'
+        ? data.textLayout : additionalPhotos.length ? 'stack' : 'columns'
 
       return {
         ...block,
         data: {
-          src: String(data.src || ''),
-          alt: String(data.alt ?? 'Изображение новости'),
+          ...first,
+          additionalPhotos: additionalPhotos.length ? additionalPhotos : undefined,
+          collageLayout: data.collageLayout === 'two' || data.collageLayout === 'three' || data.collageLayout === 'lead' ? data.collageLayout : undefined,
+          collageFit: data.collageFit === 'cover' || data.collageFit === 'contain' ? data.collageFit : undefined,
           caption: String(data.caption || ''),
           textHtml: String(data.textHtml || ''),
           imageSide: data.imageSide === 'right' ? 'right' : 'left',
-          textLayout: data.textLayout === 'wrap' || data.textLayout === 'stack' ? data.textLayout : 'columns',
+          textLayout,
           textGap: typeof data.textGap === 'number' ? data.textGap : undefined,
           textPosition: data.textPosition === 'center' || data.textPosition === 'end' ? data.textPosition : 'start',
           stackOrder: data.stackOrder === 'text-first' ? 'text-first' : 'image-first',

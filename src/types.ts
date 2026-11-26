@@ -132,9 +132,15 @@ export interface CardsData {
   cards: CardItem[]
 }
 
-export interface ImageData {
+export interface ImagePhoto {
   src: string
   alt: string
+}
+
+export interface ImageData extends ImagePhoto {
+  additionalPhotos?: ImagePhoto[]
+  collageLayout?: 'two' | 'three' | 'lead'
+  collageFit?: 'cover' | 'contain'
   caption: string
   textHtml: string
   imageSide: 'left' | 'right'

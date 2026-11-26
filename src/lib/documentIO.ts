@@ -51,6 +51,28 @@ export const readImageAsDataUrl = (file: File): Promise<string> =>
     reader.readAsDataURL(file)
   })
 
+export const readPhotoAsDataUrl = async (file: File) => {
+  if (file.type !== 'image/jpeg' || file.size <= 512 * 1024 || typeof createImageBitmap !== 'function') {
+    return readImageAsDataUrl(file)
+  }
+
+  // Keep batches of camera photos small enough for a browser draft.
+  const bitmap = await createImageBitmap(file)
+  try {
+    const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height))
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale))
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale))
+    const context = canvas.getContext('2d')
+    if (!context) return readImageAsDataUrl(file)
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+    const optimized = canvas.toDataURL('image/jpeg', 0.82)
+    return optimized.length < file.size * 4 / 3 ? optimized : readImageAsDataUrl(file)
+  } finally {
+    bitmap.close()
+  }
+}
+
 export const fetchImageAsDataUrl = async (url: string): Promise<string> => {
   const response = await fetch(url)
   if (!response.ok) {

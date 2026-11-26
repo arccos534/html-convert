@@ -1954,8 +1954,28 @@ export const SettingsPanel = ({
         const updateImage = (patch: Partial<typeof data>) => onUpdateBlock({ ...block, data: { ...data, ...patch } })
         return (
           <div className="settings-stack">
+            {layout.collage && (
+              <section className="settings-section">
+                <h4>Коллаж</h4>
+                <label>
+                  Раскладка коллажа
+                  <select value={layout.grid} onChange={(event) => updateImage({ collageLayout: event.target.value as typeof layout.grid })}>
+                    <option value="two">Две колонки</option>
+                    <option value="three">Три колонки</option>
+                    <option value="lead">Первое фото крупнее</option>
+                  </select>
+                </label>
+                <label>
+                  Кадрирование
+                  <select value={layout.fit} onChange={(event) => updateImage({ collageFit: event.target.value as typeof layout.fit })}>
+                    <option value="cover">Заполнить ячейки</option>
+                    <option value="contain">Показать фото целиком</option>
+                  </select>
+                </label>
+              </section>
+            )}
             <section className="settings-section">
-              <h4>Изображение и текст</h4>
+              <h4>{layout.collage ? 'Коллаж и текст' : 'Изображение и текст'}</h4>
               <label>
                 Режим размещения
                 <select value={layout.mode} onChange={(event) => {
@@ -1963,14 +1983,14 @@ export const SettingsPanel = ({
                   updateImage({ textLayout })
                 }}>
                   <option value="columns">Рядом в двух колонках</option>
-                  <option value="wrap">Обтекание текстом</option>
+                  {!layout.collage && <option value="wrap">Обтекание текстом</option>}
                   <option value="stack">Друг под другом</option>
                 </select>
               </label>
 
               {layout.mode !== 'stack' && (
                 <label>
-                  Сторона изображения
+                  {layout.collage ? 'Сторона коллажа' : 'Сторона изображения'}
                   <select value={layout.side} onChange={(event) => updateImage({ imageSide: event.target.value as typeof data.imageSide })}>
                     <option value="left">Слева от текста</option>
                     <option value="right">Справа от текста</option>
@@ -1979,13 +1999,13 @@ export const SettingsPanel = ({
               )}
 
               <label>
-                Ширина изображения: {layout.width}%
+                {layout.collage ? 'Ширина коллажа' : 'Ширина изображения'}: {layout.width}%
                 <input type="range" min={20} max={layout.maxWidth} value={layout.width}
                   onChange={(event) => updateImage({ width: Number(event.target.value) })} />
               </label>
 
               <label>
-                Расстояние между изображением и текстом: {layout.gap} пкс
+                Расстояние до текста: {layout.gap} пкс
                 <input type="range" min={0} max={48} value={layout.gap}
                   onChange={(event) => updateImage({ textGap: Number(event.target.value) })} />
               </label>
@@ -2006,14 +2026,14 @@ export const SettingsPanel = ({
                 {layout.mode === 'stack' ? 'Порядок сверху вниз' : 'Порядок на узком экране'}
                 <select value={layout.order}
                   onChange={(event) => updateImage({ stackOrder: event.target.value as NonNullable<typeof data.stackOrder> })}>
-                  <option value="image-first">Сначала изображение</option>
+                  <option value="image-first">{layout.collage ? 'Сначала коллаж' : 'Сначала изображение'}</option>
                   <option value="text-first">Сначала текст</option>
                 </select>
               </label>
 
               {(layout.mode === 'stack' || !hasText) && (
                 <label>
-                  Выравнивание одиночного изображения
+                  {layout.collage ? 'Выравнивание коллажа' : 'Выравнивание одиночного изображения'}
                   <select value={layout.align} onChange={(event) => updateImage({ align: event.target.value as typeof data.align })}>
                     {alignOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                   </select>
@@ -2023,7 +2043,7 @@ export const SettingsPanel = ({
               {!hasText && <p className="settings-tip">Размещение применяется к основному тексту в карточке изображения.</p>}
             </section>
 
-            <label>
+            {!layout.collage && <label>
               Alt-текст
               <input
                 value={block.data.alt}
@@ -2031,7 +2051,7 @@ export const SettingsPanel = ({
                   onUpdateBlock({ ...block, data: { ...block.data, alt: event.target.value } })
                 }
               />
-            </label>
+            </label>}
 
             <label>
               Скругление углов: {block.data.radius}px

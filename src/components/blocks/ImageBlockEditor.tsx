@@ -1,11 +1,12 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { fetchImageAsDataUrl, isEmbeddedImageSource, readImageAsDataUrl } from '../../lib/documentIO'
-import { getImageLayout } from '../../lib/imageLayout'
+import { fetchImageAsDataUrl, isEmbeddedImageSource, readPhotoAsDataUrl } from '../../lib/documentIO'
+import { getImageLayout, getImagePhotos } from '../../lib/imageLayout'
 import { hasMeaningfulHtml, sanitizeHtml } from '../../lib/sanitizeHtml'
-import type { ImageBlock, ImageData } from '../../types'
+import type { ImageBlock, ImageData, ImagePhoto } from '../../types'
 import { RichTextEditor } from './RichTextEditor'
 import '../../lib/imageLayout.css'
+import '../../lib/imageCollage.css'
 
 interface ImageBlockEditorProps {
   block: ImageBlock
@@ -20,11 +21,14 @@ interface ImageBlockEditorProps {
 export const ImageBlockEditor = ({ block, selected, editable, onSelect, onChange, chartMedia = false, media }: ImageBlockEditorProps) => {
   const { data } = block
   const editing = editable && selected
-  const hasImage = Boolean(data.src.trim())
+  const photos = getImagePhotos(data)
+  const hasImage = photos.length > 0
   const embedded = isEmbeddedImageSource(data.src)
   const hasText = hasMeaningfulHtml(data.textHtml)
   const layout = getImageLayout(data, hasText)
   const fileInput = useRef<HTMLInputElement>(null)
+  const replacementInput = useRef<HTMLInputElement>(null)
+  const replacementIndex = useRef(0)
   const sourceOperation = useRef(0)
   const latest = useRef({ block, onChange })
   const [loading, setLoading] = useState(false)
@@ -50,17 +54,25 @@ export const ImageBlockEditor = ({ block, selected, editable, onSelect, onChange
     update({ src })
   }
 
-  const loadSource = async (read: () => Promise<string>, errorMessage: string, fileName?: string) => {
+  const setPhotos = (photos: ImagePhoto[]) => {
+    const [first, ...additionalPhotos] = photos
+    update({
+      src: first?.src ?? '',
+      alt: first?.alt ?? latest.current.block.data.alt,
+      additionalPhotos: additionalPhotos.length ? additionalPhotos : undefined,
+    })
+  }
+
+  const load = async <T,>(read: () => Promise<T>, commit: (result: T, photos: ImagePhoto[]) => void, errorMessage: string) => {
     const operation = ++sourceOperation.current
-    const originalSource = latest.current.block.data.src
+    const original = latest.current.block.data
     setLoading(true)
     setError('')
     try {
-      const src = await read()
-      if (!isEmbeddedImageSource(src)) throw new Error(errorMessage)
-      if (operation === sourceOperation.current && latest.current.block.data.src === originalSource) {
-        const alt = latest.current.block.data.alt
-        update({ src, alt: alt || fileName?.replace(/\.[^.]+$/, '') || '' })
+      const result = await read()
+      const current = latest.current.block.data
+      if (operation === sourceOperation.current && current.src === original.src && current.additionalPhotos === original.additionalPhotos) {
+        commit(result, getImagePhotos(current))
       }
     } catch {
       if (operation === sourceOperation.current) setError(errorMessage)
@@ -69,11 +81,55 @@ export const ImageBlockEditor = ({ block, selected, editable, onSelect, onChange
     }
   }
 
+  const loadFiles = (files: File[], target?: number) => load(async () => {
+    const added: ImagePhoto[] = []
+    for (const file of files) {
+      try {
+        const src = await readPhotoAsDataUrl(file)
+        if (isEmbeddedImageSource(src)) added.push({ src, alt: file.name.replace(/\.[^.]+$/, '') })
+      } catch {
+        // Keep the photos that were read successfully.
+      }
+    }
+    if (!added.length) throw new Error()
+    return added
+  }, (added, photos) => {
+    if (target === undefined) {
+      if (!photos.length && added.length === 1) added[0].alt = latest.current.block.data.alt || added[0].alt
+      setPhotos([...photos, ...added])
+    } else {
+      setPhotos(photos.map((photo, index) => index === target ? { ...added[0], alt: photo.alt || added[0].alt } : photo))
+    }
+    if (added.length < files.length) setError('Часть файлов не удалось загрузить.')
+  }, 'Не удалось открыть файлы изображений. Выберите другие файлы.')
+
+  const replacePhoto = (index: number) => {
+    replacementIndex.current = index
+    replacementInput.current?.click()
+  }
+
+  const movePhoto = (index: number, offset: -1 | 1) => {
+    const next = [...photos]
+    const photo = next[index]
+    next[index] = next[index + offset]
+    next[index + offset] = photo
+    setPhotos(next)
+  }
+
   const moveCaptionToText = () => {
     const paragraph = document.createElement('p')
     paragraph.textContent = data.caption.trim()
     update({ caption: '', textHtml: paragraph.outerHTML })
   }
+
+  const renderPhoto = ({ src, alt }: ImagePhoto) => (
+    <img src={src} alt={alt} style={{
+      borderRadius: layout.radius,
+      boxShadow: data.shadow ? '0 14px 30px rgba(15,23,42,0.16)' : undefined,
+      padding: data.withPadding ? 12 : undefined,
+      background: data.withPadding ? '#fff' : undefined,
+    }} />
+  )
 
   return (
     <section
@@ -84,23 +140,32 @@ export const ImageBlockEditor = ({ block, selected, editable, onSelect, onChange
       {editable && !chartMedia && (
         <div className="image-card-controls">
           <div className="image-card-actions">
-            <button type="button" className="settings-action-button" onClick={() => fileInput.current?.click()}>
-              {hasImage ? 'Заменить фото' : 'Загрузить фото'}
+            <button type="button" className="settings-action-button" disabled={loading} onClick={() => fileInput.current?.click()}>
+              {hasImage ? 'Добавить фото' : 'Загрузить фото'}
             </button>
             <input
               ref={fileInput}
               type="file"
               accept="image/*"
+              multiple
               aria-label="Файл изображения"
               hidden
               onChange={(event) => {
-                const file = event.currentTarget.files?.[0]
+                const files = Array.from(event.currentTarget.files ?? [])
                 event.currentTarget.value = ''
-                if (file) void loadSource(() => readImageAsDataUrl(file), 'Не удалось открыть файл изображения. Выберите другой файл.', file.name)
+                if (files.length) void loadFiles(files)
               }}
             />
-            {editing && hasImage && (
-              <button type="button" className="settings-action-button" onClick={() => setSource('')}>Убрать фото</button>
+            <input ref={replacementInput} type="file" accept="image/*" hidden aria-label="Файл для замены" onChange={(event) => {
+              const file = event.currentTarget.files?.[0]
+              event.currentTarget.value = ''
+              if (file) void loadFiles([file], replacementIndex.current)
+            }} />
+            {editing && hasImage && !layout.collage && (
+              <>
+                <button type="button" className="settings-action-button" disabled={loading} onClick={() => replacePhoto(0)}>Заменить фото</button>
+                <button type="button" className="settings-action-button" disabled={loading} onClick={() => setPhotos([])}>Убрать фото</button>
+              </>
             )}
             {editing && data.caption.trim() && !hasText && (
               <button type="button" className="settings-action-button" onClick={moveCaptionToText}>
@@ -108,13 +173,44 @@ export const ImageBlockEditor = ({ block, selected, editable, onSelect, onChange
               </button>
             )}
           </div>
+          {editing && layout.collage && (
+            <details className="image-card-source image-photo-manager">
+              <summary>Порядок и описания фото ({photos.length})</summary>
+              <ol>
+                {photos.map((photo, index) => (
+                  <li key={index}>
+                    <img src={photo.src} alt="" />
+                    <input className="inline-edit-input" aria-label={`Alt-текст фото ${index + 1}`} placeholder="Описание фото" value={photo.alt}
+                      disabled={loading} onChange={(event) => setPhotos(photos.map((item, position) => position === index ? { ...item, alt: event.target.value } : item))} />
+                    <div className="image-photo-actions">
+                      <button type="button" className="settings-action-button" disabled={loading || index === 0}
+                        aria-label={`Переместить фото ${index + 1} раньше`} onClick={() => movePhoto(index, -1)}>↑</button>
+                      <button type="button" className="settings-action-button" disabled={loading || index === photos.length - 1}
+                        aria-label={`Переместить фото ${index + 1} позже`} onClick={() => movePhoto(index, 1)}>↓</button>
+                      <button type="button" className="settings-action-button" disabled={loading} aria-label={`Заменить фото ${index + 1}`}
+                        onClick={() => replacePhoto(index)}>Заменить</button>
+                      <button type="button" className="settings-action-button" disabled={loading} aria-label={`Убрать фото ${index + 1}`}
+                        onClick={() => setPhotos(photos.filter((_, position) => position !== index))}>Убрать</button>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            </details>
+          )}
           {editing && (
             <details className="image-card-source">
               <summary>Фото по ссылке</summary>
               <form onSubmit={(event) => {
                 event.preventDefault()
                 const src = new FormData(event.currentTarget).get('imageUrl')
-                if (typeof src === 'string' && src.trim()) setSource(src.trim())
+                if (typeof src !== 'string' || !src.trim()) return
+                const submitter = (event.nativeEvent as SubmitEvent).submitter
+                if (submitter instanceof HTMLButtonElement && submitter.value === 'append') {
+                  setPhotos([...photos, { src: src.trim(), alt: '' }])
+                  event.currentTarget.reset()
+                } else {
+                  setSource(src.trim())
+                }
               }}>
                 <input
                   key={embedded ? 'embedded' : data.src}
@@ -126,14 +222,19 @@ export const ImageBlockEditor = ({ block, selected, editable, onSelect, onChange
                   defaultValue={embedded ? '' : data.src}
                   required
                 />
-                <button type="submit" className="settings-action-button">Применить</button>
+                <button type="submit" className="settings-action-button" disabled={loading}>{layout.collage ? 'Заменить первое фото' : 'Применить'}</button>
+                {hasImage && <button type="submit" value="append" className="settings-action-button" disabled={loading}>Добавить по ссылке</button>}
               </form>
               {hasImage && !embedded && (
                 <button type="button" className="settings-action-button" disabled={loading} onClick={() => {
-                  void loadSource(() => fetchImageAsDataUrl(data.src), 'Не удалось встроить фото по ссылке. Попробуйте загрузить файл.')
-                }}>Встроить фото в HTML</button>
+                  void load(async () => {
+                    const src = await fetchImageAsDataUrl(data.src)
+                    if (!isEmbeddedImageSource(src)) throw new Error()
+                    return src
+                  }, (src) => update({ src }), 'Не удалось встроить фото по ссылке. Попробуйте загрузить файл.')
+                }}>{layout.collage ? 'Встроить первое фото в HTML' : 'Встроить фото в HTML'}</button>
               )}
-              {embedded && <p>Фото встроено в HTML.</p>}
+              {embedded && <p>{layout.collage ? 'Первое фото встроено в HTML.' : 'Фото встроено в HTML.'}</p>}
             </details>
           )}
           {loading && <p role="status">Загружаем фото…</p>}
@@ -146,19 +247,16 @@ export const ImageBlockEditor = ({ block, selected, editable, onSelect, onChange
           ['--news-image-gap' as string]: `${layout.gap}px`,
         }}>
           <figure className="image-wrap">
-            {media || (hasImage ? (
-              <img src={data.src} alt={data.alt} style={{
-                borderRadius: layout.radius,
-                boxShadow: data.shadow ? '0 14px 30px rgba(15,23,42,0.16)' : undefined,
-                padding: data.withPadding ? 12 : undefined,
-                background: data.withPadding ? '#fff' : undefined,
-              }} />
-            ) : <div className="image-placeholder">Место для фото</div>)}
+            {media || (layout.collage ? (
+              <div className={layout.collageClassName}>
+                {photos.map((photo, index) => <div key={index} className="image-tile">{renderPhoto(photo)}</div>)}
+              </div>
+            ) : hasImage ? renderPhoto(photos[0]) : <div className="image-placeholder">Место для фото</div>)}
             {editing && !chartMedia ? (
               <input
                 className="inline-edit-input image-caption-edit"
-                aria-label="Подпись под фото"
-                placeholder="Подпись под фото"
+                aria-label={layout.collage ? 'Подпись к коллажу' : 'Подпись под фото'}
+                placeholder={layout.collage ? 'Подпись к коллажу' : 'Подпись под фото'}
                 value={data.caption}
                 onChange={(event) => update({ caption: event.target.value })}
               />

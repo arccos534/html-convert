@@ -469,6 +469,20 @@ details[open] > summary .menu-caret { transform: translateY(2px) rotate(225deg);
   border-color: var(--accent-line);
   background: var(--accent-soft);
 }
+.image-card-controls button:disabled { opacity: .5; cursor: default; }
+.image-photo-manager ol { margin: 8px 0; padding: 0; list-style: none; }
+.image-photo-manager li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+}
+.image-photo-manager img { width: 42px; height: 32px; object-fit: cover; border-radius: 3px; }
+.image-photo-manager input { flex: 1 1 120px; min-width: 0; font-size: 13px; }
+.image-photo-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.image-photo-actions button { padding: 3px 7px; font-size: 12px; }
 .panel-right .settings-item-head button:disabled { color: var(--muted); opacity: .55; }
 .panel-right .chart-import-button:focus-within { outline: 2px solid var(--accent-line); outline-offset: 2px; }
 .panel-right .rgb-preview { border-color: var(--control-line); border-radius: 3px; box-shadow: none; }

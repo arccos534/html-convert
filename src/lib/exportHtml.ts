@@ -1,6 +1,7 @@
 import { getChartImageSrc } from './chartImport'
-import { getImageLayout } from './imageLayout'
+import { getImageLayout, getImagePhotos } from './imageLayout'
 import imageLayoutCss from './imageLayout.css?inline'
+import imageCollageCss from './imageCollage.css?inline'
 import { hasMeaningfulHtml, sanitizeHtml } from './sanitizeHtml'
 import type {
   ArticleBlock,
@@ -171,16 +172,20 @@ const getChartTitleHtml = (data: { titleHtml?: string; title: string }) =>
 const renderImage = (data: ImageData) => {
   const hasText = hasMeaningfulHtml(data.textHtml)
   const layout = getImageLayout(data, hasText)
-  if (!data.src.trim()) {
+  const photos = getImagePhotos(data)
+  if (!photos.length) {
     return hasText ? `<div class="image-copy-richtext rich-text">${data.textHtml}</div>` : ''
   }
-  const mediaHtml = `
+  const renderPhoto = ({ src, alt }: (typeof photos)[number]) => `
       <img
-        src="${escapeAttr(data.src)}"
-        alt="${escapeAttr(data.alt)}"
+        src="${escapeAttr(src)}"
+        alt="${escapeAttr(alt)}"
         style="border-radius:${layout.radius}px;${data.shadow ? 'box-shadow:0 14px 30px rgba(15,23,42,.16);' : ''}${data.withPadding ? 'padding:12px;background:#fff;' : ''}"
       />
   `
+  const mediaHtml = layout.collage
+    ? `<div class="${layout.collageClassName}">${photos.map((photo) => `<div class="image-tile">${renderPhoto(photo)}</div>`).join('')}</div>`
+    : renderPhoto(photos[0])
 
   return `
     <div class="news-image-shell">
@@ -1038,8 +1043,10 @@ export const renderDocumentBlocksHtml = (blocks: ArticleBlock[]): string =>
 
 export const generateStandaloneHtml = (documentData: ArticleDocument): string => {
   const renderedBlocks = renderDocumentBlocksHtml(documentData.blocks)
+  const hasCollage = documentData.blocks.some((block) => block.type === 'image' && getImagePhotos(block.data).length > 1)
+  const collageStyles = hasCollage ? imageCollageCss.replaceAll('.news-image-context', `.${EXPORT_ROOT_CLASS}`) : ''
 
-  return `<style>${exportCss}</style>
+  return `<style>${exportCss}${collageStyles}</style>
 <div class="${EXPORT_ROOT_CLASS}">
   <main class="news-page" style="--page-width:${Math.max(720, documentData.settings.pageWidth)}px;font-size:${documentData.settings.baseFontSize}px;">
     ${renderedBlocks}

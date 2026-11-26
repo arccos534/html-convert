@@ -1,0 +1,40 @@
+:where(.news-image-context) .news-image-shell:has(> .image-has-collage) { container: collage-block / inline-size; }
+:where(.news-image-context) .image-has-collage > .image-wrap { container: collage-photos / inline-size; }
+:where(.news-image-context) .image-has-collage.image-mode-columns:not(.image-alone) > .image-wrap { width: 100%; }
+:where(.news-image-context) .image-has-collage > .image-copy { min-width: 0; max-width: 100%; overflow: auto; }
+
+:where(.news-image-context) .image-has-collage.image-mode-columns:not(.image-alone) {
+  --collage-track: min(var(--news-image-width, 50%), calc(100% - var(--news-image-gap, 24px) - 180px));
+  grid-template-columns: var(--collage-track) minmax(0, 1fr);
+}
+
+:where(.news-image-context) .image-has-collage.image-mode-columns:where(.image-side-right):not(.image-alone) {
+  grid-template-columns: minmax(0, 1fr) var(--collage-track);
+}
+
+:where(.news-image-context) .image-collage {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+:where(.news-image-context) .image-collage-three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+:where(.news-image-context) .image-tile { min-width: 0; aspect-ratio: 4 / 3; }
+:where(.news-image-context) .image-collage-lead > .image-tile:first-child { grid-column: 1 / -1; aspect-ratio: 2 / 1; }
+:where(.news-image-context) .image-collage .image-tile img { width: 100%; height: 100%; object-fit: cover; }
+:where(.news-image-context) .image-fit-contain .image-tile img { object-fit: contain; }
+
+@container collage-block (max-width: 560px) {
+  :where(.news-image-context) .image-has-collage.image-mode-columns:not(.image-alone) { grid-template-columns: minmax(0, 1fr); }
+  :where(.news-image-context) .image-has-collage.image-mode-columns:not(.image-alone) > .image-wrap { order: 0; }
+  :where(.news-image-context) .image-has-collage.image-order-text-first > .image-copy { order: -1; }
+}
+
+@container collage-photos (max-width: 340px) {
+  :where(.news-image-context) .image-collage-three { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@container collage-photos (max-width: 180px) {
+  :where(.news-image-context) .image-collage { grid-template-columns: minmax(0, 1fr); }
+  :where(.news-image-context) .image-collage-lead > .image-tile:first-child { aspect-ratio: 4 / 3; }
+}
