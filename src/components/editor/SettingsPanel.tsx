@@ -44,6 +44,20 @@ const alignOptions: Array<{ value: TextAlign; label: string }> = [
   { value: 'right', label: 'Справа' },
 ]
 
+// A block alignment set in the inspector replaces explicit paragraph overrides.
+const clearParagraphAlignment = (html: string) => {
+  const template = document.createElement('template')
+  template.innerHTML = html
+  let changed = false
+  for (const paragraph of template.content.querySelectorAll<HTMLElement>('p[style], h1[style], h2[style], h3[style]')) {
+    if (!paragraph.style.textAlign) continue
+    paragraph.style.removeProperty('text-align')
+    if (!paragraph.style.length) paragraph.removeAttribute('style')
+    changed = true
+  }
+  return changed ? template.innerHTML : html
+}
+
 const splitLines = (value: string) =>
   value
     .split(/\r?\n/)
@@ -1040,7 +1054,12 @@ export const SettingsPanel = ({
             </label>
 
             {renderAlignSelect(block.data.align, (align) =>
-              onUpdateBlock({ ...block, data: { ...block.data, align } }),
+              onUpdateBlock({ ...block, data: {
+                ...block.data,
+                align,
+                titleHtml: block.data.titleHtml && clearParagraphAlignment(block.data.titleHtml),
+                subtitleHtml: block.data.subtitleHtml && clearParagraphAlignment(block.data.subtitleHtml),
+              } }),
             )}
 
             <div className="settings-inline-card rgb-panel">
@@ -1204,7 +1223,7 @@ export const SettingsPanel = ({
             </label>
 
             {renderAlignSelect(block.data.align, (align) =>
-              onUpdateBlock({ ...block, data: { ...block.data, align } }),
+              onUpdateBlock({ ...block, data: { ...block.data, align, leadHtml: clearParagraphAlignment(block.data.leadHtml) } }),
             )}
 
             <p className="settings-tip">Лид редактируется прямо в блоке на холсте.</p>
@@ -1215,7 +1234,7 @@ export const SettingsPanel = ({
         return (
           <div className="settings-stack">
             {renderAlignSelect(block.data.align, (align) =>
-              onUpdateBlock({ ...block, data: { ...block.data, align } }),
+              onUpdateBlock({ ...block, data: { ...block.data, align, html: clearParagraphAlignment(block.data.html) } }),
             )}
 
             <label>

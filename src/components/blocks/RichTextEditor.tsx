@@ -22,7 +22,6 @@ interface RichTextEditorProps {
   paragraphGap: number
   trailingParagraph?: boolean
   onChange: (html: string) => void
-  onAlignChange?: (align: 'left' | 'center' | 'right') => void
 }
 
 const fontSizes = [14, 16, 18, 20, 24, 28, 32]
@@ -60,20 +59,19 @@ export const RichTextEditor = ({
   align,
   paragraphGap,
   trailingParagraph = true,
-  onAlignChange,
 }: RichTextEditorProps) => {
-  const { activateEditor, updateSelection, refreshToolbar, activeBinding } = useRichTextToolbar()
+  const { activateEditor, deactivateEditor, updateSelection, refreshToolbar, activeBinding } = useRichTextToolbar()
   const [lastSelection, setLastSelection] = useState<{ from: number; to: number } | null>(null)
   const requireSelectionRef = useRef(requireSelectionForToolbarActions)
-  const onAlignChangeRef = useRef(onAlignChange)
+  const defaultAlignRef = useRef(align)
 
   useEffect(() => {
     requireSelectionRef.current = requireSelectionForToolbarActions
   }, [requireSelectionForToolbarActions])
 
   useEffect(() => {
-    onAlignChangeRef.current = onAlignChange
-  }, [onAlignChange])
+    defaultAlignRef.current = align
+  }, [align])
 
   const extensions = useMemo(
     () => [
@@ -95,6 +93,7 @@ export const RichTextEditor = ({
       FontSize,
       TextAlign.configure({
         types: ['heading', 'paragraph'],
+        alignments: ['left', 'center', 'right', 'justify'],
       }),
     ],
     [trailingParagraph],
@@ -118,11 +117,11 @@ export const RichTextEditor = ({
       const selection = editor.state.selection
       const nextSelection = selection.empty ? null : { from: selection.from, to: selection.to }
       setLastSelection(nextSelection)
-      if (!readOnly) {
+      if (!readOnly && editor.isFocused) {
         activateEditor({
           editor,
           requireSelectionForToolbarActions: requireSelectionRef.current,
-          onAlignChange: onAlignChangeRef.current,
+          defaultAlign: defaultAlignRef.current,
         })
         updateSelection(nextSelection)
       }
@@ -136,7 +135,7 @@ export const RichTextEditor = ({
       activateEditor({
         editor,
         requireSelectionForToolbarActions: requireSelectionRef.current,
-        onAlignChange: onAlignChangeRef.current,
+        defaultAlign: defaultAlignRef.current,
       })
       updateSelection(selection.empty ? null : { from: selection.from, to: selection.to })
     },
@@ -153,12 +152,9 @@ export const RichTextEditor = ({
   }, [editor, value])
 
   useEffect(() => {
-    if (!editor || !align) {
-      return
-    }
-
-    editor.commands.setTextAlign(align)
-  }, [align, editor])
+    if (!editor || readOnly) return
+    return () => deactivateEditor(editor)
+  }, [deactivateEditor, editor, readOnly])
 
   useEffect(() => {
     if (!editor || readOnly) {
@@ -169,7 +165,7 @@ export const RichTextEditor = ({
       activateEditor({
         editor,
         requireSelectionForToolbarActions,
-        onAlignChange,
+        defaultAlign: align,
       })
       refreshToolbar()
     }
@@ -177,7 +173,7 @@ export const RichTextEditor = ({
     activeBinding?.editor,
     activateEditor,
     editor,
-    onAlignChange,
+    align,
     readOnly,
     refreshToolbar,
     requireSelectionForToolbarActions,
@@ -244,7 +240,9 @@ export const RichTextEditor = ({
     ? 'center'
     : editor.isActive({ textAlign: 'right' })
       ? 'right'
-      : 'left'
+      : editor.isActive({ textAlign: 'justify' })
+        ? 'justify'
+        : editor.isActive({ textAlign: 'left' }) ? 'left' : align ?? 'left'
 
   return (
     <div className="rt-wrapper" style={{ ['--paragraph-gap' as string]: `${paragraphGap}px` }}>
@@ -352,14 +350,14 @@ export const RichTextEditor = ({
               disabled={selectionActionDisabled}
               value={currentAlign}
               onChange={(event) => {
-                const nextAlign = event.target.value as 'left' | 'center' | 'right'
+                const nextAlign = event.target.value
                 runToolbarCommand((chain) => chain.setTextAlign(nextAlign))
-                onAlignChange?.(nextAlign)
               }}
             >
               <option value="left">Слева</option>
               <option value="center">Центр</option>
               <option value="right">Справа</option>
+              <option value="justify">По ширине</option>
             </select>
           </label>
         </div>

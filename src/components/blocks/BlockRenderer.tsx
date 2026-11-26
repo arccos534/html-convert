@@ -139,11 +139,11 @@ export const BlockRenderer = ({
     case 'hero':
       return (
         <section
-          className={`content-block hero-block ${selected ? 'is-selected' : ''}`}
+          className={`content-block hero-block ${block.data.backgroundEnabled ? '' : 'hero-unfilled'} ${selected ? 'is-selected' : ''}`}
           style={{
             marginTop: block.spacing.marginTop,
             marginBottom: block.spacing.marginBottom,
-            background: buildHeroBackground(block.data),
+            background: block.data.backgroundEnabled ? buildHeroBackground(block.data) : undefined,
             color: getHeroTextColor(block.data),
             textAlign: block.data.align,
           }}
@@ -159,7 +159,6 @@ export const BlockRenderer = ({
                   trailingParagraph={false}
                   readOnly={!canEdit}
                   requireSelectionForToolbarActions
-                  onAlignChange={(align) => onChange({ ...block, data: { ...block.data, align } })}
                   onChange={(titleHtml) =>
                     onChange({
                       ...block,
@@ -179,7 +178,6 @@ export const BlockRenderer = ({
                   paragraphGap={8}
                   readOnly={!canEdit}
                   requireSelectionForToolbarActions
-                  onAlignChange={(align) => onChange({ ...block, data: { ...block.data, align } })}
                   onChange={(subtitleHtml) =>
                     onChange({
                       ...block,
@@ -245,7 +243,6 @@ export const BlockRenderer = ({
             align={block.data.align}
             paragraphGap={12}
             readOnly={!canEdit}
-            onAlignChange={(align) => onChange({ ...block, data: { ...block.data, align } })}
             onChange={(leadHtml) => onChange({ ...block, data: { ...block.data, leadHtml } })}
           />
         </section>
@@ -268,7 +265,6 @@ export const BlockRenderer = ({
             align={block.data.align}
             paragraphGap={block.data.paragraphGap}
             readOnly={!canEdit}
-            onAlignChange={(align) => onChange({ ...block, data: { ...block.data, align } })}
             onChange={(html) => onChange({ ...block, data: { ...block.data, html } })}
           />
         </section>

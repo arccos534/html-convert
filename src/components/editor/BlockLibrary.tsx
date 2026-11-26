@@ -1,6 +1,13 @@
 import { useState } from 'react'
 import { blockNames, blockTemplates } from '../../data/blockFactory'
 import type { ArticleBlock, BlockType } from '../../types'
+import { EditorIcon, type EditorIconName } from './EditorIcon'
+
+const blockIcons: Record<BlockType, EditorIconName> = {
+  hero: 'heading', newsIntro: 'newspaper', richText: 'text', image: 'image', quote: 'quote',
+  columns: 'columns', cards: 'cards', background: 'layers', divider: 'divider', button: 'pointer',
+  important: 'important', callout: 'info', table: 'table', stats: 'stats', chart: 'chart',
+}
 
 const groups: { name: string; types: BlockType[] }[] = [
   { name: 'Основные', types: ['hero', 'newsIntro', 'richText', 'image', 'quote'] },
@@ -66,6 +73,7 @@ export const BlockLibrary = ({ blocks, selectedBlockId, showOutline, onChangeSec
                     <div className="library-grid">
                       {items.map((item) => (
                         <button key={item.type} type="button" className="library-card" title={item.description} onClick={() => onAddBlock(item.type)}>
+                          <EditorIcon name={blockIcons[item.type]} />
                           <strong>{item.name}</strong>
                           <span className="library-add" aria-hidden="true">+</span>
                         </button>

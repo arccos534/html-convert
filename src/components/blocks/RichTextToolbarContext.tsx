@@ -11,7 +11,7 @@ interface EditorSelection {
 interface ActiveRichTextBinding {
   editor: Editor
   requireSelectionForToolbarActions: boolean
-  onAlignChange?: (align: TextAlign) => void
+  defaultAlign?: TextAlign
 }
 
 interface RichTextToolbarContextValue {
@@ -19,6 +19,7 @@ interface RichTextToolbarContextValue {
   lastSelection: EditorSelection | null
   version: number
   activateEditor: (binding: ActiveRichTextBinding) => void
+  deactivateEditor: (editor: Editor) => void
   updateSelection: (selection: EditorSelection | null) => void
   refreshToolbar: () => void
 }
@@ -42,6 +43,10 @@ export const RichTextToolbarProvider = ({ children }: { children: ReactNode }) =
     setVersion((prev) => prev + 1)
   }, [])
 
+  const deactivateEditor = useCallback((editor: Editor) => {
+    setActiveBinding((binding) => binding?.editor === editor ? null : binding)
+  }, [])
+
   const refreshToolbar = useCallback(() => {
     setVersion((prev) => prev + 1)
   }, [])
@@ -52,10 +57,11 @@ export const RichTextToolbarProvider = ({ children }: { children: ReactNode }) =
       lastSelection,
       version,
       activateEditor,
+      deactivateEditor,
       updateSelection,
       refreshToolbar,
     }),
-    [activeBinding, lastSelection, version, activateEditor, updateSelection, refreshToolbar],
+    [activeBinding, lastSelection, version, activateEditor, deactivateEditor, updateSelection, refreshToolbar],
   )
 
   return <RichTextToolbarContext.Provider value={value}>{children}</RichTextToolbarContext.Provider>

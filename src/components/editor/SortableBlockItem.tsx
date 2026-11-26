@@ -39,6 +39,7 @@ export const SortableBlockItem = ({
     <article
       ref={setNodeRef}
       id={`block-${block.id}`}
+      data-block-type={block.type}
       style={style}
       className={`canvas-item${selected ? ' is-selected' : ''}${isDragging ? ' is-dragging' : ''}`}
       onClick={onSelect}
